@@ -1,0 +1,99 @@
+[build-system]
+# build the package with [flit](https://flit.readthedocs.io)
+requires = ["flit_core >=3.4,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+# See https://www.python.org/dev/peps/pep-0621/
+name = "easybuild-jupyter-kernels"
+dynamic = ["version"]
+description = ""
+authors = [
+    { name = "Davide Grassano" },
+]
+readme = "README.md"
+license = { file = "LICENSE.txt" }
+classifiers = [
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+keywords = ["easybuild"]
+requires-python = ">=3.10"
+dependencies = [
+    "jupyter_client",
+]
+
+[project.urls]
+Source = "https://github.com/crivella/"
+
+[project.optional-dependencies]
+# tests = [
+#     "pytest~=8.2.0",
+#     "pytest-cov~=6.2.1",
+#     "pytest-django~=4.11.1",
+#     "pytest-regressions~=2.8.1",
+# ]
+pre-commit = [
+    "pre-commit",
+    "pylint",
+    "pylint-pytest",
+]
+release = [
+    "flit"
+]
+
+[tool.flit.module]
+name = "easybuild_jupyter_kernels"
+
+[tool.flit.sdist]
+exclude = [
+    ".gitignore", ".github", ".pre-commit-config.yaml",
+    "tests/", "tests/*",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.pylint.main]
+load-plugins = [
+    "pylint_pytest"
+]
+
+[tool.pylint.messages_control]
+disable = [
+    "logging-fstring-interpolation",
+    "global-statement",
+    "broad-exception-caught",
+    "too-few-public-methods",
+]
+
+
+[tool.pylint.format]
+max-line-length = 120
+good-names = [
+    "_",
+    "l", "r", "b", "t",
+    "l1", "r1", "b1", "t1",
+    "l2", "r2", "b2", "t2",
+    "i", "j",
+    "k", "v",
+    "f",
+]
+
+[tool.pylint.design]
+max-args = 10
+max-locals = 30
+max-attributes = 12
+max-positional-arguments = 10
+
+[tool.tox]
+requires = ["tox>=4"]
+env_list = ["3.10", "3.11", "3.12", "3.13"]
+
+[tool.tox.env_run_base]
+description = "Run test under {base_python}"
+commands = [["pytest", "tests"]]
+deps = [".[tests]"]
