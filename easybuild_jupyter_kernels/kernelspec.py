@@ -51,7 +51,7 @@ class KernelData:
         """Create a KernelData instance from an environment module."""
         mod_name, mod_ver = module.split('/')
 
-        cmds = [f"module load {module} 2>&1 > /dev/null"]
+        cmds = [f"module load {module} > /dev/null 2>&1"]
         field_names = []
         for field_info in fields(cls):
             getcmd = field_info.metadata.get('getcmd')
