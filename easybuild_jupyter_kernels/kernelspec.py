@@ -101,11 +101,21 @@ class EBKernelSpecManager(KernelSpecManager):
         """
         specs = super().find_kernel_specs()
 
+        current_eb_python = os.getenv('EBVERSIONPYTHON', None)
+
         server_modules = self._find_jupyter_server_modules()
         for mod in server_modules:
             if mod.startswith('/'):
                 continue
             data = KernelData.from_env_module(mod)
+            # If another Easybuild Python is already loaded in the environment, with potentially other modules on top
+            # of it (eg SciPy stack), avoid exposing kernels that would be incompatible with it
+            if current_eb_python and data.py_version != current_eb_python:
+                self.log.debug(
+                    f"Skipping kernel spec for {mod} (Python {data.py_version}) as it does not match current externally"
+                    f" loaded Python version {current_eb_python}"
+                )
+                continue
             # name = f"python{data.py_version}"
             name = mod.replace('/', '__')
             specs[name] = data.kernel_path
