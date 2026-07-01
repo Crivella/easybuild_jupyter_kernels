@@ -1,0 +1,65 @@
+name: build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
+        with:
+            path: ~/.cache/pip
+            key: pip-pre-commit-${{ hashFiles('**/pyproject.toml') }}
+            restore-keys: pip-pre-commit-
+
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+            python-version: "3.13"
+
+      - name: Install Python dependencies
+        run: pip install -e .[pre-commit,tests]
+
+      - name: Run pre-commit
+        run: pre-commit run --all-files || ( git status --short ; git diff ; exit 1 )
+
+  tests:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.14"]
+    steps:
+      - uses: actions/checkout@v3
+
+      # Use EESSI to ensure we have Lmod available
+      # This should happen before the other python steps to ensure we are not using pytest/python from the compat layer
+      - uses: eessi/github-action-eessi@v3
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ matrix.python-version }}-tests-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: pip-${{ matrix.python-version }}-tests
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[tests]
+      - name: Run tests
+        run: |
+          pytest -sv tests
+        shell: bash
