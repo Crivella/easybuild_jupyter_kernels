@@ -40,8 +40,10 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-
+      # Use EESSI to ensure we have Lmod available
+      # This should happen before the other python steps to ensure we are not using pytest/python from the compat layer
       - uses: eessi/github-action-eessi@v3
+
       - name: Cache Python dependencies
         uses: actions/cache@v3
         with:

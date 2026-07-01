@@ -48,18 +48,15 @@ def jp_server_config():
     }
 
 
-@pytest.fixture(scope='session', autouse=True)
-def lmod_environment(tmpdir_factory):
+@pytest.fixture
+def lmod_environment(monkeypatch, tmpdir_factory):
     """Set up a mock Lmod environment for testing."""
     # Create a temporary directory to simulate the Lmod environment
     lmod_dir = tmpdir_factory.mktemp('lmod')
 
-    previous_modulepath = os.environ.get('MODULEPATH', '')
-    os.environ['MODULEPATH'] = str(lmod_dir)
+    monkeypatch.setenv('MODULEPATH', str(lmod_dir))
 
-    yield lmod_dir
-
-    os.environ['MODULEPATH'] = previous_modulepath
+    return lmod_dir
 
 
 @pytest.fixture

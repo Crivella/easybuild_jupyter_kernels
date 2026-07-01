@@ -1,12 +1,11 @@
 """Tests for checking if the custom kernelspec manager finds the expected kernels from EasyBuild's `jupyter-server`
 modules."""
-
 import json
 
-DEFAULT_KERNELS = ['echo', 'python3']
+from commons import DEFAULT_KERNELS
 
 
-async def test_kernels_endpoint_bare(jp_fetch):
+async def test_kernels_endpoint_bare(jp_fetch, lmod_environment):
     """Test the /api/kernelspecs endpoint without any modules available.
 
     Tests that the custom EBKernelSpecManager still finds the default kernels (echo and python3).
@@ -61,12 +60,9 @@ async def test_kernels_endpoint_multiple_module(jp_fetch, jupyter_server_module1
     kernelspecs = response_dct.pop('kernelspecs', None)
     assert kernelspecs is not None
 
-    echo_kernel = kernelspecs.pop('echo', None)
-    assert echo_kernel is not None
-
-    py3_kernel = kernelspecs.pop('python3', None)
-    assert py3_kernel is not None
-
+    for kernel_name in DEFAULT_KERNELS:
+        kernel = kernelspecs.pop(kernel_name, None)
+        assert kernel is not None, f"{kernel_name} kernel not found in kernelspecs"
 
     for module in [jupyter_server_module1, jupyter_server_module2]:
         expected_kernel_name = f"{module.name}__{module.version}"
@@ -94,11 +90,9 @@ async def test_kernels_endpoint_preloaded_python(
     kernelspecs = response_dct.pop('kernelspecs', None)
     assert kernelspecs is not None
 
-    echo_kernel = kernelspecs.pop('echo', None)
-    assert echo_kernel is not None
-
-    py3_kernel = kernelspecs.pop('python3', None)
-    assert py3_kernel is not None
+    for kernel_name in DEFAULT_KERNELS:
+        kernel = kernelspecs.pop(kernel_name, None)
+        assert kernel is not None, f"{kernel_name} kernel not found in kernelspecs"
 
     for module in [jupyter_server_module1, jupyter_server_module2, jupyter_server_module3]:
         if module.pyver == expected_pyver:
