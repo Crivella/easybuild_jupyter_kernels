@@ -6,7 +6,6 @@ Install package
 
 ```bash
 cd PROJECT_DIRECOTRY
-pip install jupyterlab
 pip install .
 ```
 
@@ -16,6 +15,12 @@ Launch jupyter lab
 jupyter lab --ServerApp.kernel_spec_manager_class=easybuild_jupyter_kernels.kernelspec.EBKernelSpecManager
 ```
 
-## TODO
+## How does this look
 
-- [ ] Add a configuration file
+Images generated using a `jupyter lab` server started with the [jupyterlmod](https://github.com/cmd-ntrf/jupyter-lmod) extension and [EESSI](https://www.eessi.io/) activated
+
+![Without findable jupyter-server modules](images/nomodule.png)
+
+![With findable kernels but no specific Python loaded](images/module_nopython.png)
+
+![With findable kernels and a specific Python loaded](images/module_python.png)
