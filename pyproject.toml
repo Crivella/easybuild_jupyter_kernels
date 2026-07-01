@@ -15,27 +15,28 @@ readme = "README.md"
 license = { file = "LICENSE.txt" }
 classifiers = [
     "Programming Language :: Python",
+    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 keywords = ["easybuild"]
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dependencies = [
     "jupyter_client",
 ]
 
 [project.urls]
-Source = "https://github.com/crivella/"
+Source = "https://github.com/crivella/easybuild_jupyter_kernels"
 
 [project.optional-dependencies]
-# tests = [
-#     "pytest~=8.2.0",
-#     "pytest-cov~=6.2.1",
-#     "pytest-django~=4.11.1",
-#     "pytest-regressions~=2.8.1",
-# ]
+tests = [
+    "pytest",
+    "pytest-cov",
+    "pytest-jupyter[server]",
+]
 pre-commit = [
     "pre-commit",
     "pylint",
@@ -74,13 +75,7 @@ disable = [
 [tool.pylint.format]
 max-line-length = 120
 good-names = [
-    "_",
-    "l", "r", "b", "t",
-    "l1", "r1", "b1", "t1",
-    "l2", "r2", "b2", "t2",
-    "i", "j",
-    "k", "v",
-    "f",
+    "_", "k", "v",
 ]
 
 [tool.pylint.design]
@@ -91,7 +86,7 @@ max-positional-arguments = 10
 
 [tool.tox]
 requires = ["tox>=4"]
-env_list = ["3.10", "3.11", "3.12", "3.13"]
+env_list = ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
 
 [tool.tox.env_run_base]
 description = "Run test under {base_python}"
