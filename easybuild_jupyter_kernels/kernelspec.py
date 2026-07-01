@@ -149,15 +149,15 @@ class EBKernelSpecManager(KernelSpecManager):
         ppath += [p for p in existing_ppath if p not in ppath]
         # Add additional paths that could've already been injected into sys.path by sitecustomize.py / jupyterlmod or
         # other mechanisms, but are not in PYTHONPATH or the kernel's pythonpath.
-        ppath += [
-            p for p in sys.path if
-                p not in ppath and
-                os.path.isdir(p) and
+        ppath += [p for p in sys.path if p not in ppath and os.path.isdir(p)]
+        ppath = list(filter(
+            lambda p:
                 # Avoid adding host system paths
                 not p.startswith('/usr') and
                 # Avoid adding paths from the current Python environment (e.g., virtualenv or conda)
-                not p.startswith(sys.prefix)
-        ]
+                not p.startswith(sys.prefix),
+            ppath
+        ))
         ppath = os.pathsep.join(filter(None, ppath))
 
         # Make sure to also include any existing EBPYTHONPREFIXES that are not already in the kernel's EBPYTHONPREFIXES
