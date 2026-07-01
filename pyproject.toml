@@ -90,5 +90,9 @@ env_list = ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
 
 [tool.tox.env_run_base]
 description = "Run test under {base_python}"
-commands = [["pytest", "tests"]]
+allowlist_externals = ["bash", "module"]
+commands = [
+    # Use bash to ensure the lmod command is available in the shell
+    ["bash", "-lc", "\"{envpython}\" -m pytest"],
+]
 deps = [".[tests]"]

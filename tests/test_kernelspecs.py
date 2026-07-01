@@ -43,8 +43,7 @@ async def test_kernels_endpoint_one_module(jp_fetch, jupyter_server_module1):
         assert kernel is not None, f"{kernel_name} kernel not found in kernelspecs"
 
     for module in [jupyter_server_module1]:
-        mname, mver, _ = module
-        expected_kernel_name = f"{mname}__{mver}"
+        expected_kernel_name = f"{module.name}__{module.version}"
         kernel = kernelspecs.pop(expected_kernel_name, None)
         assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
 
@@ -70,8 +69,7 @@ async def test_kernels_endpoint_multiple_module(jp_fetch, jupyter_server_module1
 
 
     for module in [jupyter_server_module1, jupyter_server_module2]:
-        mname, mver, _ = module
-        expected_kernel_name = f"{mname}__{mver}"
+        expected_kernel_name = f"{module.name}__{module.version}"
         kernel = kernelspecs.pop(expected_kernel_name, None)
         assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
 
@@ -103,9 +101,8 @@ async def test_kernels_endpoint_preloaded_python(
     assert py3_kernel is not None
 
     for module in [jupyter_server_module1, jupyter_server_module2, jupyter_server_module3]:
-        mname, mver, pyver = module
-        if pyver == expected_pyver:
-            expected_kernel_name = f"{mname}__{mver}"
+        if module.pyver == expected_pyver:
+            expected_kernel_name = f"{module.name}__{module.version}"
             m1_kernel = kernelspecs.pop(expected_kernel_name, None)
             assert m1_kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
 
