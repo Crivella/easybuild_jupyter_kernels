@@ -14,7 +14,7 @@ async def test_eessi_kernel_env(eb_async_kernel_manager, jp_start_kernel):
     else:
         raise ValueError('Unsupported version of EESSI')
 
-    _, kclient = await jp_start_kernel(kernel_name=kernel_name)
+    _, kclient = await jp_start_kernel(kernel_name=kernel_name, startup_timeout=120)
     kclient: AsyncKernelClient
 
     for envvar in ['EBPYTHONPREFIXES', 'PYTHONPATH', 'LD_LIBRARY_PATH']:
