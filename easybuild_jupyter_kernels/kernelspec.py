@@ -36,6 +36,9 @@ class ModuleKernelMapping(Mapping):
     kernel_version_env_var: str = field(metadata={
         'help': 'Environment variable that contains the kernel version to be displayed',
     })
+    launcher_args_env_vars: list[str] = field(default_factory=list, metadata={
+        'help': 'Environment variables needed to resolve the launcher arguments (e.g., EBROOTIJULIA for IJulia)',
+    })
     kernel_resource_dir: str = field(default='', metadata={
         'help': 'Path to the kernel resource directory relative to the kernel spec directory',
     })
@@ -78,7 +81,31 @@ MODULE_KERNEL_MAP: dict[str, ModuleKernelMapping] = {
         launcher_version_env_var='EBVERSIONPYTHON',
         kernel_version_env_var='EBVERSIONOCTAVE',
         kernel_resource_dir='images',
-    )
+    ),
+    # 'Cling': ModuleKernelMapping(
+    #     kernel_display_name=f'{DISPLAY_PREFIX} C++ (Cling)',
+    #     kernel_language='C++',
+    #     kernel_path='$EBROOTCLING/share/jupyter/kernels/cling',
+    #     launcher_exec='jupyter-cling-kernel',
+    #     launcher_args=['-f', '{connection_file}', '--std=c++20'],
+    #     launcher_version_env_var='EBVERSIONCLING',
+    #     kernel_version_env_var='EBVERSIONCLING',
+    # ),
+    'IJulia': ModuleKernelMapping(
+        kernel_display_name=f'{DISPLAY_PREFIX} Julia',
+        kernel_language='julia',
+        kernel_path='$EBROOTIJULIA/jupyter/kernels/julia-*',
+        launcher_exec='julia',
+        # launcher_args=[
+        #     '-i', '--color=yes', '--project=@.', '-e', 'import IJulia; IJulia.run_kernel()', '{connection_file}'
+        # ],
+        launcher_args=[
+            '-i', '--color=yes', '--project=@.', '$EBROOTIJULIA/packages/IJulia/src/kernel.jl', '{connection_file}'
+        ],
+        launcher_args_env_vars=['EBROOTIJULIA'],
+        launcher_version_env_var='EBVERSIONJULIA',
+        kernel_version_env_var='EBVERSIONJULIA',
+    ),
 }
 
 @dataclass
@@ -94,7 +121,7 @@ class KernelData:
     })
     kernel_path: str = field(metadata={
         'help': 'Path to the kernel spec directory',
-        'getcmd': 'echo {kernel_path}'
+        'getcmd': 'realpath {kernel_path}'
     })
     kernel_version: str = field(metadata={
         'help': 'Kernel version',
@@ -124,6 +151,14 @@ class KernelData:
         'help': 'LD_LIBRARY_PATH environment variable',
         'getcmd': 'echo $LD_LIBRARY_PATH'
     })
+    eb_julia_depot_path: str = field(default='', metadata={
+        'help': 'EBJULIA_DEPOT_PATH environment variable',
+        'getcmd': 'echo $EBJULIA_DEPOT_PATH'
+    })
+    eb_julia_load_path: str = field(default='', metadata={
+        'help': 'EBJULIA_LOAD_PATH environment variable',
+        'getcmd': 'echo $EBJULIA_LOAD_PATH'
+    })
 
     @classmethod
     @lru_cache(maxsize=None)
@@ -143,6 +178,12 @@ class KernelData:
                 cmds.append(getcmd)
                 field_names.append(field_name)
 
+        # Extra vars that should not be used to populate the KernelData fields
+        extra_vars = list(info_map.launcher_args_env_vars)
+        # Extra vars needed to resolve the launcher args
+        for var in extra_vars:
+            cmds.append(f"echo ${var}")
+
         cmd = ' && '.join(cmds)
         try:
             output = subprocess.check_output(
@@ -153,9 +194,26 @@ class KernelData:
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Failed to load module {module}: {e.output.decode('utf-8')}") from e
 
+
+        output_lines = output.decode('utf-8').splitlines()
         data_dct = {}
-        for name, value in zip(field_names, output.decode('utf-8').splitlines()):
-            data_dct[name] = value
+        extra_vars_dct = {}
+        try:
+            while field_names:
+                data_dct[field_names.pop(0)] = output_lines.pop(0)
+            while extra_vars:
+                extra_vars_dct[extra_vars.pop(0).lower()] = output_lines.pop(0)
+        except IndexError as exc:
+            raise RuntimeError(
+                f"Failed to parse output for module {module}: not enough output lines:\n{output}"
+            ) from exc
+
+        for var in info_map.launcher_args_env_vars:
+            value = extra_vars_dct.get(var.lower())
+            if value is None:
+                raise RuntimeError(f"Failed to get value for {var} from resolving launcher args for module {module}")
+            info_map.launcher_args = [arg.replace(f"${var}", value) for arg in info_map.launcher_args]
+
         return cls(mod_name=mod_name, mod_version=mod_ver, **data_dct)
 
 
@@ -266,6 +324,17 @@ class EBKernelSpecManager(KernelSpecManager):
         prefixes += [p for p in existing_prefixes if p not in prefixes]
         prefixes = os.pathsep.join(filter(None, prefixes))
 
+        existing_depot_path = os.getenv('EBJULIA_DEPOT_PATH', '').split(os.pathsep)
+        depot_path = kernel_data.eb_julia_depot_path.split(os.pathsep)
+        depot_path += [p for p in existing_depot_path if p not in depot_path]
+        depot_path = os.pathsep.join(filter(None, depot_path))
+
+        existing_load_path = os.getenv('EBJULIA_LOAD_PATH', '').split(os.pathsep)
+        load_path = kernel_data.eb_julia_load_path.split(os.pathsep)
+        load_path += [p for p in existing_load_path if p not in load_path]
+        load_path = os.pathsep.join(filter(None, load_path))
+
+
         kernel_dct = {
             'argv': [kernel_data.launcher_exe] + launcher_args,
             'display_name': f"{display_name} ({kernel_data.kernel_version})",
@@ -276,7 +345,9 @@ class EBKernelSpecManager(KernelSpecManager):
                 'PYTHONPATH': ppath,
                 'EBPYTHONPREFIXES': prefixes,
                 # "EBPYTHONPREFIXES_DEBUG": "1",
-                'LD_LIBRARY_PATH': kernel_data.ld_library_path
+                'LD_LIBRARY_PATH': kernel_data.ld_library_path,
+                'EBJULIA_DEPOT_PATH': depot_path,
+                'EBJULIA_LOAD_PATH': load_path,
             }
         }
 
