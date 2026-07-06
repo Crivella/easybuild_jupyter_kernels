@@ -1,4 +1,7 @@
-# PoC of implementing a custom jupyter kernel manager for EasyBuild-installed python versions
+# Custom jupyter kernel manager for EasyBuild-installed packages
+
+This package provides a custom `KernelSpecManager` that automatically exposes all kernels installed via [EasyBuild](https://easybuild.io/) and
+currently visible in the module environment.
 
 ## Usage
 
