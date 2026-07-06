@@ -39,9 +39,6 @@ class ModuleKernelMapping(Mapping):
     launcher_args_env_vars: list[str] = field(default_factory=list, metadata={
         'help': 'Environment variables needed to resolve the launcher arguments (e.g., EBROOTIJULIA for IJulia)',
     })
-    kernel_resource_dir: str = field(default='', metadata={
-        'help': 'Path to the kernel resource directory relative to the kernel spec directory',
-    })
 
     def __getitem__(self, key):
         """Allow dictionary-like access to the attributes of the dataclass."""
@@ -75,12 +72,11 @@ MODULE_KERNEL_MAP: dict[str, ModuleKernelMapping] = {
     'octave-kernel': ModuleKernelMapping(
         kernel_display_name=f'{DISPLAY_PREFIX} Octave',
         kernel_language='octave',
-        kernel_path='$EBROOTOCTAVEMINKERNEL/share/jupyter/kernels/octave',
+        kernel_path='$EBROOTOCTAVEMINKERNEL/share/jupyter/kernels/octave/images',
         launcher_exec='python',
         launcher_args=['-m', 'octave_kernel', '-f', '{connection_file}'],
         launcher_version_env_var='EBVERSIONPYTHON',
         kernel_version_env_var='EBVERSIONOCTAVE',
-        kernel_resource_dir='images',
     ),
     # 'Cling': ModuleKernelMapping(
     #     kernel_display_name=f'{DISPLAY_PREFIX} C++ (Cling)',
@@ -105,6 +101,24 @@ MODULE_KERNEL_MAP: dict[str, ModuleKernelMapping] = {
         launcher_args_env_vars=['EBROOTIJULIA'],
         launcher_version_env_var='EBVERSIONJULIA',
         kernel_version_env_var='EBVERSIONJULIA',
+    ),
+    'ROOT': ModuleKernelMapping(
+        kernel_display_name=f'{DISPLAY_PREFIX} ROOT C++',
+        kernel_language='c++',
+        kernel_path='$EBROOTROOT/etc/notebook/kernels/root/',
+        launcher_exec='python',
+        launcher_args=['-m', 'JupyROOT.kernel.rootkernel', '-f', '{connection_file}'],
+        launcher_version_env_var='EBVERSIONPYTHON',
+        kernel_version_env_var='EBVERSIONROOT',
+    ),
+    'IRkernel': ModuleKernelMapping(
+        kernel_display_name=f'{DISPLAY_PREFIX} R',
+        kernel_language='R',
+        kernel_path='$EBROOTIRKERNEL/IRkernel/kernelspec/',
+        launcher_exec='R',
+        launcher_args=['--slave', '-e', 'IRkernel::main()', '--args', '{connection_file}'],
+        launcher_version_env_var='EBVERSIONR',
+        kernel_version_env_var='EBVERSIONR',
     ),
 }
 
@@ -143,13 +157,17 @@ class KernelData:
         'help': 'PYTHONPATH environment variable',
         'getcmd': 'echo $PYTHONPATH'
     })
-    eb_pythonprefixes: str = field(default='', metadata={
-        'help': 'EBPYTHONPREFIXES environment variable',
-        'getcmd': 'echo $EBPYTHONPREFIXES'
-    })
     ld_library_path: str = field(default='', metadata={
         'help': 'LD_LIBRARY_PATH environment variable',
         'getcmd': 'echo $LD_LIBRARY_PATH'
+    })
+    r_libs_site: str = field(default='', metadata={
+        'help': 'R_LIBS_SITE environment variable',
+        'getcmd': 'echo $R_LIBS_SITE'
+    })
+    eb_pythonprefixes: str = field(default='', metadata={
+        'help': 'EBPYTHONPREFIXES environment variable',
+        'getcmd': 'echo $EBPYTHONPREFIXES'
     })
     eb_julia_depot_path: str = field(default='', metadata={
         'help': 'EBJULIA_DEPOT_PATH environment variable',
@@ -258,7 +276,6 @@ class EBKernelSpecManager(KernelSpecManager):
             info_map = MODULE_KERNEL_MAP[data.mod_name]
             current_launcher_version = os.getenv(info_map.launcher_version_env_var, None)
             current_kernel_version = os.getenv(info_map.kernel_version_env_var, None)
-            resource_dir  = os.path.join(data.kernel_path, info_map.kernel_resource_dir)
 
             # If another Easybuild Python is already loaded in the environment, with potentially other modules on top
             # of it (eg SciPy stack), avoid exposing kernels that would be incompatible with it
@@ -274,9 +291,8 @@ class EBKernelSpecManager(KernelSpecManager):
                     f"current externally loaded kernel version {current_kernel_version}"
                 )
                 continue
-            # name = f"python{data.py_version}"
             name = mod.replace('/', '__')
-            specs[name] = resource_dir
+            specs[name] = data.kernel_path
             self.found_specs[name] = data
             self.log.debug(f"Found kernel spec for {name}: {data.kernel_path} (Python {data.launcher_version})")
 
@@ -305,7 +321,6 @@ class EBKernelSpecManager(KernelSpecManager):
         launcher_args = info_map.launcher_args
         display_name = info_map.kernel_display_name
         language = info_map.kernel_language
-        resource_dir  = os.path.join(kernel_data.kernel_path, info_map.kernel_resource_dir)
 
         existing_ppath = os.getenv('PYTHONPATH', '').split(os.pathsep)
         # Ensure the pythonpath required for the kernel to work is added first
@@ -325,37 +340,34 @@ class EBKernelSpecManager(KernelSpecManager):
         ))
         ppath = os.pathsep.join(filter(None, ppath))
 
-        # Make sure to also include any existing EBPYTHONPREFIXES that are not already in the kernel's EBPYTHONPREFIXES
-        existing_prefixes = os.getenv('EBPYTHONPREFIXES', '').split(os.pathsep)
-        prefixes = kernel_data.eb_pythonprefixes.split(os.pathsep)
-        prefixes += [p for p in existing_prefixes if p not in prefixes]
-        prefixes = os.pathsep.join(filter(None, prefixes))
+        env = {
+            'PATH': kernel_data.path,
+            'LD_LIBRARY_PATH': kernel_data.ld_library_path,
+            'PYTHONPATH': ppath,
+        }
 
-        existing_depot_path = os.getenv('EBJULIA_DEPOT_PATH', '').split(os.pathsep)
-        depot_path = kernel_data.eb_julia_depot_path.split(os.pathsep)
-        depot_path += [p for p in existing_depot_path if p not in depot_path]
-        depot_path = os.pathsep.join(filter(None, depot_path))
+        var_map = {
+            'EBPYTHONPREFIXES': 'eb_pythonprefixes',
+            'EBJULIA_DEPOT_PATH': 'eb_julia_depot_path',
+            'EBJULIA_LOAD_PATH': 'eb_julia_load_path',
+            'R_LIBS_SITE': 'r_libs_site',
+        }
 
-        existing_load_path = os.getenv('EBJULIA_LOAD_PATH', '').split(os.pathsep)
-        load_path = kernel_data.eb_julia_load_path.split(os.pathsep)
-        load_path += [p for p in existing_load_path if p not in load_path]
-        load_path = os.pathsep.join(filter(None, load_path))
-
+        # Make sure to also include any existing environment variables that might be set by an outside module/env
+        # manager such as jupyterlmod
+        for var, data_field in var_map.items():
+            existing = os.getenv(var, '').split(os.pathsep)
+            value = getattr(kernel_data, data_field).split(os.pathsep)
+            value += [p for p in existing if p not in value]
+            value = os.pathsep.join(filter(None, value))
+            env[var] = value
 
         kernel_dct = {
             'argv': [kernel_data.launcher_exe] + launcher_args,
             'display_name': f"{display_name} ({kernel_data.kernel_version})",
-            'resource_dir': resource_dir,
+            'resource_dir': kernel_data.kernel_path,
             'language': language,
-            'env': {
-                'PATH': kernel_data.path,
-                'PYTHONPATH': ppath,
-                'EBPYTHONPREFIXES': prefixes,
-                # "EBPYTHONPREFIXES_DEBUG": "1",
-                'LD_LIBRARY_PATH': kernel_data.ld_library_path,
-                'EBJULIA_DEPOT_PATH': depot_path,
-                'EBJULIA_LOAD_PATH': load_path,
-            }
+            'env': env
         }
 
         self.log.debug(f"Creating KernelSpec for {kernel_name}: {kernel_dct}")

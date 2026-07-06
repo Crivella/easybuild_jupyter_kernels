@@ -81,7 +81,7 @@ good-names = [
 [tool.pylint.design]
 max-args = 10
 max-locals = 30
-max-attributes = 12
+max-attributes = 15
 max-positional-arguments = 10
 
 [tool.tox]
