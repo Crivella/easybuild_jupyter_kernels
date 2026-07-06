@@ -17,10 +17,6 @@ jupyter lab --ServerApp.kernel_spec_manager_class=easybuild_jupyter_kernels.kern
 
 ## How does this look
 
-Images generated using a `jupyter lab` server started with the [jupyterlmod](https://github.com/cmd-ntrf/jupyter-lmod) extension and [EESSI](https://www.eessi.io/) activated
+Images generated using a `jupyter lab` server started with the [jupyterlmod](https://github.com/cmd-ntrf/jupyter-lmod) extension
 
-![Without findable jupyter-server modules](images/nomodule.png)
-
-![With findable kernels but no specific Python loaded](images/module_nopython.png)
-
-![With findable kernels and a specific Python loaded](images/module_python.png)
+![JupyterLab launcher](images/look.png)
