@@ -102,3 +102,77 @@ async def test_kernels_endpoint_preloaded_python(
 
     # Only the expected kernels should be present, no additional kernels from modules
     assert len(kernelspecs) == 0
+
+async def test_kernels_display_env_var(mock_display_prefix, jp_fetch, jupyter_server_module1):
+    """Test the /api/kernelspecs endpoint with one jupyter-server module available."""
+    response = await jp_fetch('api/kernelspecs')
+
+    assert response.code == 200
+
+    response_dct = json.loads(response.body.decode())
+
+    kernelspecs = response_dct.pop('kernelspecs', None)
+    assert kernelspecs is not None, 'kernelspecs key not found in response'
+
+    for kernel_name in DEFAULT_KERNELS:
+        kernel = kernelspecs.pop(kernel_name, None)
+        assert kernel is not None, f"{kernel_name} kernel not found in kernelspecs"
+
+    for module in [jupyter_server_module1]:
+        expected_kernel_name = f"{module.name}__{module.version}"
+        kernel = kernelspecs.pop(expected_kernel_name, None)
+        assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
+        spec = kernel.get('spec')
+        assert spec is not None, f"spec for {expected_kernel_name} kernel not found"
+        display_name = spec.get('display_name', '')
+        assert display_name.startswith(mock_display_prefix), \
+            f"display_name for {expected_kernel_name} '{display_name}' kernel does not start with {mock_display_prefix}"
+
+    # Only the expected kernels should be present, no additional kernels from modules
+    assert len(kernelspecs) == 0
+
+async def test_kernel_julia(jp_fetch, ijulia_module1):
+    """Test the /api/kernelspecs endpoint with one ijulia module available."""
+    response = await jp_fetch('api/kernelspecs')
+
+    assert response.code == 200
+
+    response_dct = json.loads(response.body.decode())
+
+    kernelspecs = response_dct.pop('kernelspecs', None)
+    assert kernelspecs is not None, 'kernelspecs key not found in response'
+
+    for kernel_name in DEFAULT_KERNELS:
+        kernel = kernelspecs.pop(kernel_name, None)
+        assert kernel is not None, f"{kernel_name} kernel not found in kernelspecs"
+
+    for module in [ijulia_module1]:
+        expected_kernel_name = f"{module.name}__{module.version}"
+        kernel = kernelspecs.pop(expected_kernel_name, None)
+        assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
+
+    # Only the expected kernels should be present, no additional kernels from modules
+    assert len(kernelspecs) == 0
+
+async def test_kernel_octave(jp_fetch, octave_module1):
+    """Test the /api/kernelspecs endpoint with one octave module available."""
+    response = await jp_fetch('api/kernelspecs')
+
+    assert response.code == 200
+
+    response_dct = json.loads(response.body.decode())
+
+    kernelspecs = response_dct.pop('kernelspecs', None)
+    assert kernelspecs is not None, 'kernelspecs key not found in response'
+
+    for kernel_name in DEFAULT_KERNELS:
+        kernel = kernelspecs.pop(kernel_name, None)
+        assert kernel is not None, f"{kernel_name} kernel not found in kernelspecs"
+
+    for module in [octave_module1]:
+        expected_kernel_name = f"{module.name}__{module.version}"
+        kernel = kernelspecs.pop(expected_kernel_name, None)
+        assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
+
+    # Only the expected kernels should be present, no additional kernels from modules
+    assert len(kernelspecs) == 0

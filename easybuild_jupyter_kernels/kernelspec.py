@@ -257,6 +257,7 @@ class EBKernelSpecManager(KernelSpecManager):
 
             info_map = MODULE_KERNEL_MAP[data.mod_name]
             current_launcher_version = os.getenv(info_map.launcher_version_env_var, None)
+            current_kernel_version = os.getenv(info_map.kernel_version_env_var, None)
             resource_dir  = os.path.join(data.kernel_path, info_map.kernel_resource_dir)
 
             # If another Easybuild Python is already loaded in the environment, with potentially other modules on top
@@ -265,6 +266,12 @@ class EBKernelSpecManager(KernelSpecManager):
                 self.log.debug(
                     f"Skipping kernel spec for {mod} (Python {data.launcher_version}) as it does not match current "
                     f"externally loaded Python version {current_launcher_version}"
+                )
+                continue
+            if current_kernel_version and data.kernel_version != current_kernel_version:
+                self.log.debug(
+                    f"Skipping kernel spec for {mod} (Kernel version {data.kernel_version}) as it does not match "
+                    f"current externally loaded kernel version {current_kernel_version}"
                 )
                 continue
             # name = f"python{data.py_version}"
