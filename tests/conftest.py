@@ -2,6 +2,7 @@
 import importlib
 import os
 import shutil
+from collections.abc import Generator
 from dataclasses import dataclass
 from typing import Callable, Tuple
 
@@ -13,6 +14,7 @@ from easybuild_jupyter_kernels import kernelspec
 from easybuild_jupyter_kernels.kernelspec import EBKernelSpecManager
 
 pytest_plugins = ['pytest_jupyter.jupyter_server', 'pytest_jupyter.jupyter_client']
+
 
 JUPYTER_SERVER_MODULE_TEMPLATE_LUA = """
 setenv("EBVERSIONPYTHON", "{py_version}")
@@ -37,6 +39,21 @@ setenv("EBVERSIONOCTAVE", "{octave_version}")
 prepend_path("PYTHONPATH", "{prefix}/lib/python{py_version}/site-packages")
 prepend_path("EBPYTHONPREFIXES", "{prefix}")
 prepend_path("LD_LIBRARY_PATH", "{prefix}/lib")
+"""
+
+ROOTCPP_MODULE_TEMPLATE_LUA = """
+setenv("EBROOTROOT", "{prefix}")
+setenv("EBVERSIONPYTHON", "{py_version}")
+setenv("EBVERSIONROOT", "{root_version}")
+prepend_path("PYTHONPATH", "{prefix}/lib/python{py_version}/site-packages")
+prepend_path("EBPYTHONPREFIXES", "{prefix}")
+prepend_path("LD_LIBRARY_PATH", "{prefix}/lib")
+"""
+
+IRKERNEL_MODULE_TEMPLATE_LUA = """
+setenv("EBVERSIONR", "{r_version}")
+setenv("EBROOTIRKERNEL", "{prefix}")
+prepend_path("R_LIBS_SITE", "{prefix}/lib/R/site-library")
 """
 
 def has_lmod():
@@ -85,87 +102,62 @@ def lmod_environment(monkeypatch, tmpdir):
 
     return lmod_dir
 
+def mock_exec(monkeypatch, tmpdir, name):
+    """Helper function to create a mock executable in a temporary directory."""
+    bindir = tmpdir.ensure(f'bin_{name}', dir=True)
+    exec_path = bindir.ensure(name, dir=False)
+    exec_path.chmod(0o755)
+
+    path = [str(bindir)] + os.environ.get('PATH', '').split(os.pathsep)
+    monkeypatch.setenv('PATH', os.pathsep.join(path))
+
 @pytest.fixture
 def mock_julia(monkeypatch, tmpdir):
     """Fixture to mock the Julia executable for testing."""
-    bindir = tmpdir.ensure('bin_julia', dir=True)
-    julia_path = bindir.ensure('julia', dir=False)
-    julia_path.chmod(0o755)
-
-    path = [str(bindir)] + os.environ.get('PATH', '').split(os.pathsep)
-    monkeypatch.setenv('PATH', os.pathsep.join(path))
+    mock_exec(monkeypatch, tmpdir, 'julia')
 
 @pytest.fixture
-def mock_octave(monkeypatch, tmpdir):
-    """Fixture to mock the Octave executable for testing."""
-    bindir = tmpdir.ensure('bin_octave', dir=True)
-    octave_path = bindir.ensure('octave', dir=False)
-    octave_path.chmod(0o755)
-
-    path = [str(bindir)] + os.environ.get('PATH', '').split(os.pathsep)
-    monkeypatch.setenv('PATH', os.pathsep.join(path))
+def mock_r(monkeypatch, tmpdir):
+    """Fixture to mock the R executable for testing."""
+    mock_exec(monkeypatch, tmpdir, 'R')
 
 @pytest.fixture
-def jupyter_server_module_factory(tmpdir, lmod_environment) -> Callable[[str, str], tuple[str, str]]:
+def module_factory(tmpdir, lmod_environment) -> Callable[[str, str, str, list[str], dict[str, str]], tuple[str, str]]:
     """Factory fixture to create mock Jupyter server modules for testing."""
-    def create_module(mod_ver: str, py_ver: str = '3.8') -> Tuple[str, str]:
-        modulename = 'jupyter-server'
-        root_path = tmpdir.ensure(f"jupyter-server-{mod_ver}", dir=True)
-        root_path.ensure('share/jupyter/kernels/python3', dir=True)
-        modulefile_content = JUPYTER_SERVER_MODULE_TEMPLATE_LUA.format(
-            py_version=py_ver,
-            prefix=str(root_path)
-        )
-        modulefile_path = lmod_environment.ensure(modulename, dir=True).join(f"{mod_ver}.lua")
+    def create_module(
+            mod_name: str, mod_ver: str, template: str, prefix_dirs: list[str],
+            format_dct: dict[str, str]
+        ) -> Tuple[str, str]:
+        """Helper function to create a mock module
 
+        Parameters:
+            mod_name (str): Name of the module.
+            mod_ver (str): Version of the module.
+            template (str): Template for the modulefile content.
+            prefix_dirs (list[str]): List of directories to create/expected to exists under the module's root path.
+            format_dct (dict[str, str]): Dictionary of values to format the template with.
+        """
+        root_path = tmpdir.ensure(f"{mod_name}-{mod_ver}", dir=True)
+        for rel_pth in prefix_dirs:
+            root_path.ensure(rel_pth, dir=True)
+        format_dct['prefix'] = str(root_path)
+        modulefile_content = template.format(**format_dct)
+
+        modulefile_path = lmod_environment.ensure(mod_name, dir=True).join(f"{mod_ver}.lua")
         modulefile_path.write(modulefile_content)
 
         return modulefile_path, root_path
     return create_module
 
 @pytest.fixture
-def ijulia_module_factory(tmpdir, lmod_environment, mock_julia) -> Callable[[str, str], tuple[str, str]]:
-    """Factory fixture to create mock IJulia modules for testing."""
-    def create_module(ijulia_ver: str, julia_ver: str = '1.6') -> Tuple[str, str]:
-        modulename = 'IJulia'
-        root_path = tmpdir.ensure(f"ijulia-{ijulia_ver}", dir=True)
-        root_path.ensure(f"jupyter/kernels/julia-{julia_ver}", dir=True)
-        modulefile_content = JULIA_MODULE_TEMPLATE_LUA.format(
-            ijulia_version=ijulia_ver,
-            julia_version=julia_ver,
-            prefix=str(root_path)
-        )
-        modulefile_path = lmod_environment.ensure(modulename, dir=True).join(f"{ijulia_ver}.lua")
-
-        modulefile_path.write(modulefile_content)
-
-        return modulefile_path, root_path
-    return create_module
-
-@pytest.fixture
-def octave_module_factory(tmpdir, lmod_environment, mock_octave) -> Callable[[str], tuple[str, str]]:
-    """Factory fixture to create mock Octave modules for testing."""
-    def create_module(mod_ver: str, octave_ver: str, py_ver: str = '3.8') -> Tuple[str, str]:
-        modulename = 'octave-kernel'
-        root_path = tmpdir.ensure(f"octave-kernel-{mod_ver}", dir=True)
-        root_path.ensure('share/jupyter/kernels/octave', dir=True)
-        modulefile_content = OCTAVE_MODULE_TEMPLATE_LUA.format(
-            py_version=py_ver,
-            octave_version=octave_ver,
-            prefix=str(root_path)
-        )
-        modulefile_path = lmod_environment.ensure(modulename, dir=True).join(f"{mod_ver}.lua")
-
-        modulefile_path.write(modulefile_content)
-
-        return modulefile_path, root_path
-    return create_module
-
-@pytest.fixture
-def jupyter_server_module1(jupyter_server_module_factory) -> ModuleInfo:
+def jupyter_server_module1(module_factory) -> Generator[ModuleInfo, None, None]:
     """Add a mock Jupyter server module to the MODULEPATH."""
     mod_name, mod_ver, py_ver = 'jupyter-server', '1', '3.8'
-    modulefile_path, root_path = jupyter_server_module_factory(mod_ver, py_ver)
+    modulefile_path, root_path = module_factory(
+        mod_name, mod_ver, JUPYTER_SERVER_MODULE_TEMPLATE_LUA,
+        ['share/jupyter/kernels/python3'],
+        {'py_version': py_ver}
+    )
 
     yield ModuleInfo(
         name=mod_name,
@@ -179,10 +171,14 @@ def jupyter_server_module1(jupyter_server_module_factory) -> ModuleInfo:
     root_path.remove()
 
 @pytest.fixture
-def jupyter_server_module2(jupyter_server_module_factory) -> ModuleInfo:
+def jupyter_server_module2(module_factory) -> Generator[ModuleInfo, None, None]:
     """Add a mock Jupyter server module to the MODULEPATH."""
     mod_name, mod_ver, py_ver = 'jupyter-server', '2', '3.9'
-    modulefile_path, root_path = jupyter_server_module_factory(mod_ver, py_ver)
+    modulefile_path, root_path = module_factory(
+        mod_name, mod_ver, JUPYTER_SERVER_MODULE_TEMPLATE_LUA,
+        ['share/jupyter/kernels/python3'],
+        {'py_version': py_ver}
+    )
 
     yield ModuleInfo(
         name=mod_name,
@@ -196,10 +192,14 @@ def jupyter_server_module2(jupyter_server_module_factory) -> ModuleInfo:
     root_path.remove()
 
 @pytest.fixture
-def jupyter_server_module3(jupyter_server_module_factory) -> ModuleInfo:
+def jupyter_server_module3(module_factory) -> Generator[ModuleInfo, None, None]:
     """Add a mock Jupyter server module to the MODULEPATH."""
     mod_name, mod_ver, py_ver = 'jupyter-server', '3', '3.8'
-    modulefile_path, root_path = jupyter_server_module_factory(mod_ver, py_ver)
+    modulefile_path, root_path = module_factory(
+        mod_name, mod_ver, JUPYTER_SERVER_MODULE_TEMPLATE_LUA,
+        ['share/jupyter/kernels/python3'],
+        {'py_version': py_ver}
+    )
 
     yield ModuleInfo(
         name=mod_name,
@@ -213,10 +213,14 @@ def jupyter_server_module3(jupyter_server_module_factory) -> ModuleInfo:
     root_path.remove()
 
 @pytest.fixture
-def ijulia_module1(ijulia_module_factory) -> ModuleInfo:
+def ijulia_module1(module_factory, mock_julia) -> Generator[ModuleInfo, None, None]:
     """Add a mock IJulia module to the MODULEPATH."""
     mod_name, ijulia_ver, julia_ver = 'IJulia', '0.3', '1.6'
-    modulefile_path, root_path = ijulia_module_factory(ijulia_ver, julia_ver)
+    modulefile_path, root_path = module_factory(
+        mod_name, ijulia_ver, JULIA_MODULE_TEMPLATE_LUA,
+        [f'jupyter/kernels/julia-{julia_ver}'],
+        {'ijulia_version': ijulia_ver, 'julia_version': julia_ver}
+    )
 
     yield ModuleInfo(
         name=mod_name,
@@ -230,10 +234,14 @@ def ijulia_module1(ijulia_module_factory) -> ModuleInfo:
     root_path.remove()
 
 @pytest.fixture
-def octave_module1(octave_module_factory) -> ModuleInfo:
+def octave_module1(module_factory) -> Generator[ModuleInfo, None, None]:
     """Add a mock Octave module to the MODULEPATH."""
     mod_name, mod_ver, octave_ver, py_ver = 'octave-kernel', '1', '6.4', '3.8'
-    modulefile_path, root_path = octave_module_factory(mod_ver, octave_ver, py_ver)
+    modulefile_path, root_path = module_factory(
+        mod_name, mod_ver, OCTAVE_MODULE_TEMPLATE_LUA,
+        ['share/jupyter/kernels/octave/images'],
+        {'octave_version': octave_ver, 'py_version': py_ver}
+    )
 
     yield ModuleInfo(
         name=mod_name,
@@ -241,6 +249,48 @@ def octave_module1(octave_module_factory) -> ModuleInfo:
         mod_path=str(modulefile_path),
         root_path=str(root_path),
         pyver=py_ver,
+    )
+
+    modulefile_path.remove()
+    root_path.remove()
+
+@pytest.fixture
+def rootcpp_module1(module_factory) -> Generator[ModuleInfo, None, None]:
+    """Add a mock ROOT module to the MODULEPATH."""
+    mod_name, mod_ver, root_ver, py_ver = 'ROOT', '1', '6.26', '3.8'
+    modulefile_path, root_path = module_factory(
+        mod_name, mod_ver, ROOTCPP_MODULE_TEMPLATE_LUA,
+        ['etc/notebook/kernels/root/'],
+        {'root_version': root_ver, 'py_version': py_ver}
+    )
+
+    yield ModuleInfo(
+        name=mod_name,
+        version=mod_ver,
+        mod_path=str(modulefile_path),
+        root_path=str(root_path),
+        pyver=py_ver,
+    )
+
+    modulefile_path.remove()
+    root_path.remove()
+
+@pytest.fixture
+def irkernel_module1(module_factory, mock_r) -> Generator[ModuleInfo, None, None]:
+    """Add a mock IRkernel module to the MODULEPATH."""
+    mod_name, mod_ver, r_ver = 'IRkernel', '1', '4.2'
+    modulefile_path, root_path = module_factory(
+        mod_name, mod_ver, IRKERNEL_MODULE_TEMPLATE_LUA,
+        ['IRkernel/kernelspec/'],
+        {'r_version': r_ver}
+    )
+
+    yield ModuleInfo(
+        name=mod_name,
+        version=mod_ver,
+        mod_path=str(modulefile_path),
+        root_path=str(root_path),
+        pyver=r_ver,
     )
 
     modulefile_path.remove()
