@@ -1,4 +1,7 @@
-# PoC of implementing a custom jupyter kernel manager for EasyBuild-installed python versions
+# Custom jupyter kernel manager for EasyBuild-installed packages
+
+This package provides a custom `KernelSpecManager` that automatically exposes all kernels installed via [EasyBuild](https://easybuild.io/) and
+currently visible in the module environment.
 
 ## Usage
 
@@ -17,10 +20,6 @@ jupyter lab --ServerApp.kernel_spec_manager_class=easybuild_jupyter_kernels.kern
 
 ## How does this look
 
-Images generated using a `jupyter lab` server started with the [jupyterlmod](https://github.com/cmd-ntrf/jupyter-lmod) extension and [EESSI](https://www.eessi.io/) activated
+Images generated using a `jupyter lab` server started with the [jupyterlmod](https://github.com/cmd-ntrf/jupyter-lmod) extension
 
-![Without findable jupyter-server modules](images/nomodule.png)
-
-![With findable kernels but no specific Python loaded](images/module_nopython.png)
-
-![With findable kernels and a specific Python loaded](images/module_python.png)
+![JupyterLab launcher](images/look.png)
