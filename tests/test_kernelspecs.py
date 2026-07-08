@@ -92,12 +92,12 @@ async def test_kernels_display_env_var(mock_display_prefix, jp_fetch, jupyter_se
     assert len(kernelspecs) == 0
 
 async def test_kernel_all(
-        jp_fetch, jupyter_server_module1, ijulia_module1, octave_module1, rootcpp_module1, irkernel_module1
+        jp_fetch, jupyter_server_module1, ijulia_module1, octave_module1, rootkernel_module1, irkernel_module1
     ):
     """Test the /api/kernelspecs endpoint with one of every module type."""
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
 
-    for module in [jupyter_server_module1, ijulia_module1, octave_module1, rootcpp_module1, irkernel_module1]:
+    for module in [jupyter_server_module1, ijulia_module1, octave_module1, rootkernel_module1, irkernel_module1]:
         expected_kernel_name = f"{module.name}__{module.version}"
         kernel = kernelspecs.pop(expected_kernel_name, None)
         assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"

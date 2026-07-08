@@ -255,9 +255,9 @@ def octave_module1(module_factory) -> Generator[ModuleInfo, None, None]:
     root_path.remove()
 
 @pytest.fixture
-def rootcpp_module1(module_factory) -> Generator[ModuleInfo, None, None]:
-    """Add a mock ROOT module to the MODULEPATH."""
-    mod_name, mod_ver, root_ver, py_ver = 'ROOT', '1', '6.26', '3.8'
+def rootkernel_module1(module_factory) -> Generator[ModuleInfo, None, None]:
+    """Add a mock root-kernel module to the MODULEPATH."""
+    mod_name, mod_ver, root_ver, py_ver = 'root-kernel', '1', '6.26', '3.8'
     modulefile_path, root_path = module_factory(
         mod_name, mod_ver, ROOTCPP_MODULE_TEMPLATE_LUA,
         ['etc/notebook/kernels/root/'],
