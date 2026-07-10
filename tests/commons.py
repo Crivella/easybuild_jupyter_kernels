@@ -1,5 +1,6 @@
 """Common utilities for testing Jupyter kernel execution."""
 import asyncio
+import json
 import os
 
 from jupyter_client.asynchronous.client import AsyncKernelClient
@@ -7,6 +8,22 @@ from jupyter_client.asynchronous.client import AsyncKernelClient
 DEFAULT_KERNELS = ['echo', 'python3']
 
 EESSI_PREFIX = os.environ.get('EESSI_PREFIX', None)
+
+
+def kernelspec_response_common(response):
+    """Common checks for the /api/kernelspecs endpoint response."""
+    assert response.code == 200
+
+    response_dct = json.loads(response.body.decode())
+
+    kernelspecs = response_dct.pop('kernelspecs', None)
+    assert kernelspecs is not None, 'kernelspecs key not found in response'
+
+    for kernel_name in DEFAULT_KERNELS:
+        kernel = kernelspecs.pop(kernel_name, None)
+        assert kernel is not None, f"{kernel_name} kernel not found in kernelspecs"
+
+    return kernelspecs
 
 async def get_kernel_execution_result(kclient: AsyncKernelClient, code: str, timeout: float = 10.0) -> str:
     """Execute code in the kernel and return the result."""

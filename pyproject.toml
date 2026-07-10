@@ -46,6 +46,12 @@ release = [
     "flit"
 ]
 
+[tool.isort]
+multi_line_output = 5
+force_grid_wrap = 3
+include_trailing_comma = true
+use_parentheses = true
+
 [tool.flit.module]
 name = "easybuild_jupyter_kernels"
 

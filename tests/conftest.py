@@ -11,8 +11,9 @@ from jupyter_client import manager
 from jupyter_client.manager import AsyncKernelManager
 
 from easybuild_jupyter_kernels import kernelspec
-from easybuild_jupyter_kernels.kernelspec import (CLING_CPP_STDS,
-                                                  EBKernelSpecManager)
+from easybuild_jupyter_kernels.kernelspec import (
+    CLING_CPP_STDS, EBKernelSpecManager,
+)
 
 pytest_plugins = ['pytest_jupyter.jupyter_server', 'pytest_jupyter.jupyter_client']
 
@@ -171,6 +172,12 @@ def module_factory(tmpdir, lmod_environment) -> Callable[[str, str, str, list[st
         return modulefile_path, root_path
     return create_module
 
+@pytest.fixture(autouse=True)
+def clear_kernel_data_cache(monkeypatch):
+    """Clear the lru_cache used to generate KernelData from a module-ModuleKernelMapping combo to avoid re-using a
+    module loaded from a previous test"""
+    kernelspec.KernelData.from_env_module.cache_clear()
+
 @pytest.fixture
 def jupyter_server_module1(module_factory) -> Generator[ModuleInfo, None, None]:
     """Add a mock Jupyter server module to the MODULEPATH."""
@@ -188,6 +195,8 @@ def jupyter_server_module1(module_factory) -> Generator[ModuleInfo, None, None]:
         root_path=str(root_path),
         pyver=py_ver,
     )
+
+    print('MODULEPATH:', os.getenv('MODULEPATH'))
 
     modulefile_path.remove()
     root_path.remove()

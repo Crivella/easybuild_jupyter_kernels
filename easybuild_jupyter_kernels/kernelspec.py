@@ -3,25 +3,20 @@ import os
 import subprocess
 import sys
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import (
+    asdict, dataclass, field, fields,
+)
 from functools import lru_cache
 
-from jupyter_client.kernelspec import (KernelSpec, KernelSpecManager,
-                                       NoSuchKernel)
+from jupyter_client.kernelspec import (
+    KernelSpec, KernelSpecManager, NoSuchKernel,
+)
 
-DISPLAY_PREFIX = os.getenv('EB_JUPYTER_KERNEL_DISPLAY_PREFIX', 'EasyBuild\'s')
-try:
-    KERNEL_DISPLAY_LIMIT = int(os.getenv('EB_JUPYTER_KERNEL_LIMIT', '0'))  # 0 means no limit
-except ValueError:
-    KERNEL_DISPLAY_LIMIT = 0
+from .environment import get_display_prefix, get_kernel_display_limit
 
 # MODULE_SORTING = os.getenv('EB_JUPYTER_MODULE_SORTING', 'version_desc')
 # if MODULE_SORTING not in ['version_asc', 'version_desc']:
 #     raise ValueError(f"Invalid MODULE_SORTING value: {MODULE_SORTING}. Must be 'version' or 'name'.")
-
-def normalize_module(module: str) -> str:
-    """Normalizes a module name+version (eg `XXX/1.2.3`) to a kernel name (eg `XXX__1.2.3`)"""
-    return module.replace('/', '__')
 
 
 def module_avail(module_name: str) -> list[str]:
@@ -77,7 +72,7 @@ class ModuleKernelMapping(Mapping):
     })
 
     def __post_init__(self):
-        self._hash = hash(tuple(sorted(asdict(self).items())))
+        self._hash = hash(tuple(sorted(self.items())))
 
     def __getitem__(self, key):
         """Allow dictionary-like access to the attributes of the dataclass."""
@@ -104,7 +99,7 @@ class ModuleKernelMapping(Mapping):
 MODULE_KERNEL_MAP: dict[str, ModuleKernelMapping] = {
     'jupyter-server': ModuleKernelMapping(
         mod_name='jupyter-server',
-        kernel_display_name=f'{DISPLAY_PREFIX} Python',
+        kernel_display_name='{display_prefix} Python',
         kernel_language='python',
         kernel_path='$EBROOTJUPYTERMINSERVER/share/jupyter/kernels/python3',
         launcher_exec='python',
@@ -114,7 +109,7 @@ MODULE_KERNEL_MAP: dict[str, ModuleKernelMapping] = {
     ),
     'octave-kernel': ModuleKernelMapping(
         mod_name='octave-kernel',
-        kernel_display_name=f'{DISPLAY_PREFIX} Octave',
+        kernel_display_name='{display_prefix} Octave',
         kernel_language='octave',
         kernel_path='$EBROOTOCTAVEMINKERNEL/share/jupyter/kernels/octave/images',
         launcher_exec='python',
@@ -124,7 +119,7 @@ MODULE_KERNEL_MAP: dict[str, ModuleKernelMapping] = {
     ),
     'IJulia': ModuleKernelMapping(
         mod_name='IJulia',
-        kernel_display_name=f'{DISPLAY_PREFIX} Julia',
+        kernel_display_name='{display_prefix} Julia',
         kernel_language='julia',
         kernel_path='$EBROOTIJULIA/jupyter/kernels/julia-*',
         launcher_exec='julia',
@@ -140,7 +135,7 @@ MODULE_KERNEL_MAP: dict[str, ModuleKernelMapping] = {
     ),
     'root-kernel': ModuleKernelMapping(
         mod_name='root-kernel',
-        kernel_display_name=f'{DISPLAY_PREFIX} ROOT C++',
+        kernel_display_name='{display_prefix} ROOT C++',
         kernel_language='c++',
         kernel_path='$EBROOTROOT/etc/notebook/kernels/root/',
         launcher_exec='python',
@@ -150,7 +145,7 @@ MODULE_KERNEL_MAP: dict[str, ModuleKernelMapping] = {
     ),
     'IRkernel': ModuleKernelMapping(
         mod_name='IRkernel',
-        kernel_display_name=f'{DISPLAY_PREFIX} R',
+        kernel_display_name='{display_prefix} R',
         kernel_language='R',
         kernel_path='$EBROOTIRKERNEL/IRkernel/kernelspec/',
         launcher_exec='R',
@@ -160,7 +155,7 @@ MODULE_KERNEL_MAP: dict[str, ModuleKernelMapping] = {
     ),
     'bash': ModuleKernelMapping(
         mod_name='jupyter-bash-kernel',
-        kernel_display_name=f'{DISPLAY_PREFIX} Bash',
+        kernel_display_name='{display_prefix} Bash',
         kernel_language='bash',
         kernel_path='$EBROOTJUPYTERMINBASHMINKERNEL/share/jupyter/kernels/bash',
         launcher_exec='python',
@@ -175,7 +170,7 @@ CLING_CPP_STDS = ['11', '14', '17', '20', '2b', '1z']
 MODULE_KERNEL_MAP.update({
     f'cling-{std}': ModuleKernelMapping(
         mod_name='cling-kernel',
-        kernel_display_name=f'{DISPLAY_PREFIX} C++{std} (Cling)',
+        kernel_display_name=f'{{display_prefix}} C++{std} (Cling)',
         kernel_language='C++',
         kernel_path=f'$EBROOTCLINGMINKERNEL/share/jupyter/kernels/cling-cpp{std}',
         launcher_exec='jupyter-cling-kernel',
@@ -340,9 +335,10 @@ class EBKernelSpecManager(KernelSpecManager):
                     continue
                 kernel_specs.append((kernel_id, data, info_map))
 
-            if KERNEL_DISPLAY_LIMIT:
+            kernel_display_limit = get_kernel_display_limit()
+            if kernel_display_limit:
                 kernel_specs = list(sorted(kernel_specs, key=lambda x: x[1].launcher_version, reverse=True))
-                kernel_specs = kernel_specs[:KERNEL_DISPLAY_LIMIT]
+                kernel_specs = kernel_specs[:kernel_display_limit]
             for kernel_id, data, info_map in kernel_specs:
                 specs[kernel_id] = data.kernel_path
                 self.found_specs[kernel_id] = data
@@ -367,7 +363,7 @@ class EBKernelSpecManager(KernelSpecManager):
         info_map = self.found_infos[kernel_id]
 
         launcher_args = info_map.launcher_args
-        display_name = info_map.kernel_display_name
+        display_name = info_map.kernel_display_name.format(display_prefix=get_display_prefix())
         language = info_map.kernel_language
 
         existing_ppath = os.getenv('PYTHONPATH', '').split(os.pathsep)
