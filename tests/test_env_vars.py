@@ -3,9 +3,9 @@ modules."""
 from commons import kernelspec_response_common
 
 from easybuild_jupyter_kernels.environment import (
-    DEFAULT_DISPLAY_LIMIT, DEFAULT_DISPLAY_PREFIX, get_display_prefix,
-    get_kernel_display_limit,
+    DEFAULT_DISPLAY_LIMIT, DEFAULT_DISPLAY_PREFIX, get_display_prefix, get_kernel_display_limit,
 )
+from easybuild_jupyter_kernels.loose_version import LooseVersion
 
 
 def test_get_kernel_display_limit_none(monkeypatch):
@@ -37,7 +37,7 @@ async def test_kernel_display_limit_integration1(monkeypatch, jp_fetch, jupyter_
 
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
 
-    if jupyter_server_module1.pyver >= jupyter_server_module2.pyver:
+    if LooseVersion(jupyter_server_module1.pyver) >= LooseVersion(jupyter_server_module2.pyver):
         raise ValueError('modules 2 should have a higher luancher version than module 1 for this test.')
     module = jupyter_server_module2
 
@@ -55,7 +55,7 @@ async def test_kernel_display_limit_integration2(monkeypatch, jp_fetch, jupyter_
 
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
 
-    if jupyter_server_module3.pyver >= jupyter_server_module2.pyver:
+    if LooseVersion(jupyter_server_module3.pyver) >= LooseVersion(jupyter_server_module2.pyver):
         raise ValueError('modules 2 should have a higher luancher version than module 3 for this test.')
     if jupyter_server_module3.version <= jupyter_server_module2.version:
         raise ValueError('modules 3 should have a higher version than module 2 for this test.')
@@ -75,7 +75,7 @@ async def test_kernel_display_limit_integration3(monkeypatch, jp_fetch, jupyter_
 
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
 
-    if jupyter_server_module1.pyver != jupyter_server_module3.pyver:
+    if LooseVersion(jupyter_server_module1.pyver) != LooseVersion(jupyter_server_module3.pyver):
         raise ValueError('modules 1 should have the same launcher version as module 3 for this test.')
     if jupyter_server_module3.version <= jupyter_server_module1.version:
         raise ValueError('modules 3 should have a higher version than module 1 for this test.')

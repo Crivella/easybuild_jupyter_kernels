@@ -48,6 +48,7 @@ release = [
 
 [tool.isort]
 multi_line_output = 5
+line_length = 119
 force_grid_wrap = 3
 include_trailing_comma = true
 use_parentheses = true

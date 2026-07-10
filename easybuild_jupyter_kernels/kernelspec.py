@@ -13,6 +13,7 @@ from jupyter_client.kernelspec import (
 )
 
 from .environment import get_display_prefix, get_kernel_display_limit
+from .loose_version import LooseVersion
 
 # MODULE_SORTING = os.getenv('EB_JUPYTER_MODULE_SORTING', 'version_desc')
 # if MODULE_SORTING not in ['version_asc', 'version_desc']:
@@ -236,6 +237,11 @@ class KernelData:
         'getcmd': 'echo $EBJULIA_LOAD_PATH'
     })
 
+    @property
+    def launcher_version_sem(self) -> LooseVersion:
+        """Return the launcher version as a tuple of integers for semantic versioning comparison."""
+        return LooseVersion(self.launcher_version)
+
     @classmethod
     @lru_cache(maxsize=None)
     def from_env_module(cls, module: str, info_map: ModuleKernelMapping) -> 'KernelData':
@@ -337,7 +343,7 @@ class EBKernelSpecManager(KernelSpecManager):
 
             kernel_display_limit = get_kernel_display_limit()
             if kernel_display_limit:
-                kernel_specs = list(sorted(kernel_specs, key=lambda x: x[1].launcher_version, reverse=True))
+                kernel_specs = list(sorted(kernel_specs, key=lambda x: x[1].launcher_version_sem, reverse=True))
                 kernel_specs = kernel_specs[:kernel_display_limit]
             for kernel_id, data, info_map in kernel_specs:
                 specs[kernel_id] = data.kernel_path

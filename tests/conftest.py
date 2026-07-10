@@ -11,9 +11,7 @@ from jupyter_client import manager
 from jupyter_client.manager import AsyncKernelManager
 
 from easybuild_jupyter_kernels import kernelspec
-from easybuild_jupyter_kernels.kernelspec import (
-    CLING_CPP_STDS, EBKernelSpecManager,
-)
+from easybuild_jupyter_kernels.kernelspec import CLING_CPP_STDS, EBKernelSpecManager
 
 pytest_plugins = ['pytest_jupyter.jupyter_server', 'pytest_jupyter.jupyter_client']
 
@@ -204,7 +202,7 @@ def jupyter_server_module1(module_factory) -> Generator[ModuleInfo, None, None]:
 @pytest.fixture
 def jupyter_server_module2(module_factory) -> Generator[ModuleInfo, None, None]:
     """Add a mock Jupyter server module to the MODULEPATH."""
-    mod_name, mod_ver, py_ver = 'jupyter-server', '2', '3.9'
+    mod_name, mod_ver, py_ver = 'jupyter-server', '2', '3.71'
     modulefile_path, root_path = module_factory(
         mod_name, mod_ver, JUPYTER_SERVER_MODULE_TEMPLATE_LUA,
         ['share/jupyter/kernels/python3'],
