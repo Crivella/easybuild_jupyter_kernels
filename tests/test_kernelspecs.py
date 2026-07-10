@@ -4,6 +4,8 @@ import json
 
 from commons import DEFAULT_KERNELS
 
+from easybuild_jupyter_kernels.kernelspec import CLING_CPP_STDS
+
 
 def kernelspec_response_common(response):
     """Common checks for the /api/kernelspecs endpoint response."""
@@ -35,7 +37,7 @@ async def test_kernels_endpoint_one_module(jp_fetch, jupyter_server_module1):
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
 
     for module in [jupyter_server_module1]:
-        expected_kernel_name = f"{module.name}__{module.version}"
+        expected_kernel_name = f"{module.kname}__{module.version}"
         kernel = kernelspecs.pop(expected_kernel_name, None)
         assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
 
@@ -47,7 +49,7 @@ async def test_kernels_endpoint_multiple_module(jp_fetch, jupyter_server_module1
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
 
     for module in [jupyter_server_module1, jupyter_server_module2]:
-        expected_kernel_name = f"{module.name}__{module.version}"
+        expected_kernel_name = f"{module.kname}__{module.version}"
         kernel = kernelspecs.pop(expected_kernel_name, None)
         assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
 
@@ -67,7 +69,7 @@ async def test_kernels_endpoint_preloaded_python(
 
     for module in [jupyter_server_module1, jupyter_server_module2, jupyter_server_module3]:
         if module.pyver == expected_pyver:
-            expected_kernel_name = f"{module.name}__{module.version}"
+            expected_kernel_name = f"{module.kname}__{module.version}"
             m1_kernel = kernelspecs.pop(expected_kernel_name, None)
             assert m1_kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
 
@@ -79,7 +81,7 @@ async def test_kernels_display_env_var(mock_display_prefix, jp_fetch, jupyter_se
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
 
     for module in [jupyter_server_module1]:
-        expected_kernel_name = f"{module.name}__{module.version}"
+        expected_kernel_name = f"{module.kname}__{module.version}"
         kernel = kernelspecs.pop(expected_kernel_name, None)
         assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
         spec = kernel.get('spec')
@@ -91,16 +93,34 @@ async def test_kernels_display_env_var(mock_display_prefix, jp_fetch, jupyter_se
     # Only the expected kernels should be present, no additional kernels from modules
     assert len(kernelspecs) == 0
 
+async def test_kernel_cling(jp_fetch, cling_module1, mock_jupyter_cling_kernel):
+    """Test the /api/kernelspecs endpoint with one of every module type."""
+    kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
+
+    for module in [cling_module1]:
+        for std in CLING_CPP_STDS:
+            expected_kernel_name = f"{module.kname}-{std}__{module.version}"
+            kernel = kernelspecs.pop(expected_kernel_name, None)
+            assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs {kernelspecs}"
+
+    # Only the expected kernels should be present, no additional kernels from modules
+    assert len(kernelspecs) == 0
+
+
 async def test_kernel_all(
-        jp_fetch, jupyter_server_module1, ijulia_module1, octave_module1, rootkernel_module1, irkernel_module1
+        jp_fetch, jupyter_server_module1, ijulia_module1, octave_module1, rootkernel_module1, irkernel_module1,
+        jpk_bash_module1
     ):
     """Test the /api/kernelspecs endpoint with one of every module type."""
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
 
-    for module in [jupyter_server_module1, ijulia_module1, octave_module1, rootkernel_module1, irkernel_module1]:
-        expected_kernel_name = f"{module.name}__{module.version}"
+    for module in [
+            jupyter_server_module1, ijulia_module1, octave_module1, rootkernel_module1, irkernel_module1,
+            jpk_bash_module1
+        ]:
+        expected_kernel_name = f"{module.kname}__{module.version}"
         kernel = kernelspecs.pop(expected_kernel_name, None)
-        assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
+        assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs {kernelspecs}"
 
     # Only the expected kernels should be present, no additional kernels from modules
     assert len(kernelspecs) == 0
