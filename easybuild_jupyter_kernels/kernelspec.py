@@ -63,7 +63,7 @@ class ModuleKernelMapping(Mapping):
     launcher_exec: str = field(metadata={
         'help': 'Executable used to launch the kernel (e.g., python)',
     })
-    launcher_args: list[str] = field(metadata={
+    launcher_args: tuple[str] = field(metadata={
         'help': 'Arguments to pass to the launcher executable',
     })
     launcher_version_env_var: str = field(metadata={
@@ -72,12 +72,12 @@ class ModuleKernelMapping(Mapping):
     kernel_version_env_var: str = field(metadata={
         'help': 'Environment variable that contains the kernel version to be displayed',
     })
-    launcher_args_env_vars: list[str] = field(default_factory=list, metadata={
+    launcher_args_env_vars: tuple[str] = field(default_factory=tuple, metadata={
         'help': 'Environment variables needed to resolve the launcher arguments (e.g., EBROOTIJULIA for IJulia)',
     })
 
     def __post_init__(self):
-        self._hash = None  # Cache the hash value for performance
+        self._hash = hash(tuple(sorted(asdict(self).items())))
 
     def __getitem__(self, key):
         """Allow dictionary-like access to the attributes of the dataclass."""
@@ -92,10 +92,6 @@ class ModuleKernelMapping(Mapping):
         return len(asdict(self))
 
     def __hash__(self):
-        if self._hash is None:
-            dct = asdict(self)
-            dct = {k:tuple(v) if isinstance(v, list) else v for k,v in dct.items()}
-            self._hash = hash(tuple(sorted(dct.items())))
         return self._hash
 
     def items(self):
@@ -112,7 +108,7 @@ MODULE_KERNEL_MAP: dict[str, ModuleKernelMapping] = {
         kernel_language='python',
         kernel_path='$EBROOTJUPYTERMINSERVER/share/jupyter/kernels/python3',
         launcher_exec='python',
-        launcher_args=['-m', 'ipykernel_launcher', '-f', '{connection_file}'],
+        launcher_args=('-m', 'ipykernel_launcher', '-f', '{connection_file}'),
         launcher_version_env_var='EBVERSIONPYTHON',
         kernel_version_env_var='EBVERSIONPYTHON',
     ),
@@ -122,7 +118,7 @@ MODULE_KERNEL_MAP: dict[str, ModuleKernelMapping] = {
         kernel_language='octave',
         kernel_path='$EBROOTOCTAVEMINKERNEL/share/jupyter/kernels/octave/images',
         launcher_exec='python',
-        launcher_args=['-m', 'octave_kernel', '-f', '{connection_file}'],
+        launcher_args=('-m', 'octave_kernel', '-f', '{connection_file}'),
         launcher_version_env_var='EBVERSIONPYTHON',
         kernel_version_env_var='EBVERSIONOCTAVE',
     ),
@@ -132,13 +128,13 @@ MODULE_KERNEL_MAP: dict[str, ModuleKernelMapping] = {
         kernel_language='julia',
         kernel_path='$EBROOTIJULIA/jupyter/kernels/julia-*',
         launcher_exec='julia',
-        # launcher_args=[
+        # launcher_args=(
         #     '-i', '--color=yes', '--project=@.', '-e', 'import IJulia; IJulia.run_kernel()', '{connection_file}'
-        # ],
-        launcher_args=[
+        # ),
+        launcher_args=(
             '-i', '--color=yes', '--project=@.', '$EBROOTIJULIA/packages/IJulia/src/kernel.jl', '{connection_file}'
-        ],
-        launcher_args_env_vars=['EBROOTIJULIA'],
+        ),
+        launcher_args_env_vars=('EBROOTIJULIA',),
         launcher_version_env_var='EBVERSIONJULIA',
         kernel_version_env_var='EBVERSIONJULIA',
     ),
@@ -148,7 +144,7 @@ MODULE_KERNEL_MAP: dict[str, ModuleKernelMapping] = {
         kernel_language='c++',
         kernel_path='$EBROOTROOT/etc/notebook/kernels/root/',
         launcher_exec='python',
-        launcher_args=['-m', 'JupyROOT.kernel.rootkernel', '-f', '{connection_file}'],
+        launcher_args=('-m', 'JupyROOT.kernel.rootkernel', '-f', '{connection_file}'),
         launcher_version_env_var='EBVERSIONPYTHON',
         kernel_version_env_var='EBVERSIONROOT',
     ),
@@ -158,9 +154,19 @@ MODULE_KERNEL_MAP: dict[str, ModuleKernelMapping] = {
         kernel_language='R',
         kernel_path='$EBROOTIRKERNEL/IRkernel/kernelspec/',
         launcher_exec='R',
-        launcher_args=['--slave', '-e', 'IRkernel::main()', '--args', '{connection_file}'],
+        launcher_args=('--slave', '-e', 'IRkernel::main()', '--args', '{connection_file}'),
         launcher_version_env_var='EBVERSIONR',
         kernel_version_env_var='EBVERSIONR',
+    ),
+    'bash': ModuleKernelMapping(
+        mod_name='jupyter-bash-kernel',
+        kernel_display_name=f'{DISPLAY_PREFIX} Bash',
+        kernel_language='bash',
+        kernel_path='$EBROOTJUPYTERMINBASHMINKERNEL/share/jupyter/kernels/bash',
+        launcher_exec='python',
+        launcher_args=('-m', 'bash_kernel', '-f', '{connection_file}'),
+        launcher_version_env_var='EBVERSIONPYTHON',
+        kernel_version_env_var='EBVERSIONJUPYTERMINBASHMINKERNEL',
     ),
 }
 
@@ -173,7 +179,7 @@ MODULE_KERNEL_MAP.update({
         kernel_language='C++',
         kernel_path=f'$EBROOTCLINGMINKERNEL/share/jupyter/kernels/cling-cpp{std}',
         launcher_exec='jupyter-cling-kernel',
-        launcher_args=['-f', '{connection_file}', f'--std=c++{std}'],
+        launcher_args=('-f', '{connection_file}', f'--std=c++{std}'),
         launcher_version_env_var='EBVERSIONCLING',
         kernel_version_env_var='EBVERSIONCLING',
     ) for std in CLING_CPP_STDS
@@ -285,7 +291,7 @@ class KernelData:
             value = extra_vars_dct.get(var.lower())
             if value is None:
                 raise RuntimeError(f"Failed to get value for {var} from resolving launcher args for module {module}")
-            info_map.launcher_args = [arg.replace(f"${var}", value) for arg in info_map.launcher_args]
+            info_map.launcher_args = tuple(arg.replace(f"${var}", value) for arg in info_map.launcher_args)
 
         return cls(mod_name=mod_name, mod_version=mod_ver, **data_dct)
 
@@ -306,7 +312,7 @@ class EBKernelSpecManager(KernelSpecManager):
         for kernel_name, info_map in MODULE_KERNEL_MAP.items():
             mod_name = info_map.mod_name
 
-            kernels = []
+            kernel_specs = []
             for module in module_avail(mod_name):
                 found_name, found_ver = module.split('/')
                 if found_name != mod_name:
@@ -332,10 +338,10 @@ class EBKernelSpecManager(KernelSpecManager):
                         f"match current externally loaded kernel version {current_kernel_version}"
                     )
                     continue
-                kernels.append((kernel_id, data, info_map))
+                kernel_specs.append((kernel_id, data, info_map))
 
-            kernel_specs = list(sorted(kernels, key=lambda x: x[1].launcher_version, reverse=True))
             if KERNEL_DISPLAY_LIMIT:
+                kernel_specs = list(sorted(kernel_specs, key=lambda x: x[1].launcher_version, reverse=True))
                 kernel_specs = kernel_specs[:KERNEL_DISPLAY_LIMIT]
             for kernel_id, data, info_map in kernel_specs:
                 specs[kernel_id] = data.kernel_path
@@ -405,7 +411,7 @@ class EBKernelSpecManager(KernelSpecManager):
             env[var] = value
 
         kernel_dct = {
-            'argv': [kernel_data.launcher_exe] + launcher_args,
+            'argv': (kernel_data.launcher_exe, *launcher_args),
             'display_name': f"{display_name} ({kernel_data.kernel_version})",
             'resource_dir': kernel_data.kernel_path,
             'language': language,
