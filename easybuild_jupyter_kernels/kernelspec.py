@@ -3,21 +3,13 @@ import os
 import subprocess
 import sys
 from collections.abc import Mapping
-from dataclasses import (
-    asdict, dataclass, field, fields,
-)
+from dataclasses import asdict, dataclass, field, fields
 from functools import lru_cache
 
-from jupyter_client.kernelspec import (
-    KernelSpec, KernelSpecManager, NoSuchKernel,
-)
+from jupyter_client.kernelspec import KernelSpec, KernelSpecManager, NoSuchKernel
 
-from .environment import get_display_prefix, get_kernel_display_limit
+from .environment import ModuleSorting, get_display_prefix, get_kernel_display_limit, get_module_sorting
 from .loose_version import LooseVersion
-
-# MODULE_SORTING = os.getenv('EB_JUPYTER_MODULE_SORTING', 'version_desc')
-# if MODULE_SORTING not in ['version_asc', 'version_desc']:
-#     raise ValueError(f"Invalid MODULE_SORTING value: {MODULE_SORTING}. Must be 'version' or 'name'.")
 
 
 def module_avail(module_name: str) -> list[str]:
@@ -33,11 +25,6 @@ def module_avail(module_name: str) -> list[str]:
     modules = output.decode('utf-8').splitlines()
     res = [line.strip() for line in modules if line.strip()]
     res = list(filter(lambda module: not module.startswith('/'), res))
-
-    # if MODULE_SORTING == 'version_asc':
-    #     res.sort(key=lambda module: tuple(map(int, module.split('/')[1].split('.'))))
-    # elif MODULE_SORTING == 'version_desc':
-    #     res.sort(key=lambda module: tuple(map(int, module.split('/')[1].split('.'))), reverse=True)
 
     return res
 
@@ -343,7 +330,9 @@ class EBKernelSpecManager(KernelSpecManager):
 
             kernel_display_limit = get_kernel_display_limit()
             if kernel_display_limit:
-                kernel_specs = list(sorted(kernel_specs, key=lambda x: x[1].launcher_version_sem, reverse=True))
+                sorting = get_module_sorting()
+                reverse = sorting == ModuleSorting.DESCENDING
+                kernel_specs = list(sorted(kernel_specs, key=lambda x: x[1].launcher_version_sem, reverse=reverse))
                 kernel_specs = kernel_specs[:kernel_display_limit]
             for kernel_id, data, info_map in kernel_specs:
                 specs[kernel_id] = data.kernel_path
