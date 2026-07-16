@@ -29,4 +29,4 @@ async def test_eessi_kernels_endpoint(jp_fetch):
     assert len(kernelspecs) > 0, 'No kernelspecs found from jupyter-server modules in EESSI'
 
     assert all(_['spec']['argv'][0].startswith(EESSI_PREFIX) for _ in kernelspecs.values()), \
-        'Not all kernelspecs are from jupyter-server modules'
+        'Not all kernelspecs are from jupyter-server modules' + str(kernelspecs.keys())

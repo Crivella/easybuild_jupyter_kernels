@@ -244,7 +244,7 @@ def jupyter_server_module3(module_factory) -> Generator[ModuleInfo, None, None]:
 @pytest.fixture
 def ijulia_module1(module_factory, mock_julia) -> Generator[ModuleInfo, None, None]:
     """Add a mock IJulia module to the MODULEPATH."""
-    mod_name, ijulia_ver, julia_ver = 'IJulia', '0.3', '1.6'
+    mod_name, ijulia_ver, julia_ver = 'IJulia', '0.3', '1.10.6'
     modulefile_path, root_path = module_factory(
         mod_name, ijulia_ver, JULIA_MODULE_TEMPLATE_LUA,
         [f'jupyter/kernels/julia-{julia_ver}'],
@@ -253,6 +253,49 @@ def ijulia_module1(module_factory, mock_julia) -> Generator[ModuleInfo, None, No
 
     yield ModuleInfo(
         name=mod_name,
+        kname='IJulia_old',
+        version=ijulia_ver,
+        mod_path=str(modulefile_path),
+        root_path=str(root_path),
+    )
+
+    modulefile_path.remove()
+    root_path.remove()
+
+@pytest.fixture
+def ijulia_module2(module_factory, mock_julia) -> Generator[ModuleInfo, None, None]:
+    """Add a mock IJulia module to the MODULEPATH."""
+    mod_name, ijulia_ver, julia_ver = 'IJulia', '0.4', '1.11.6'
+    modulefile_path, root_path = module_factory(
+        mod_name, ijulia_ver, JULIA_MODULE_TEMPLATE_LUA,
+        [f'jupyter/kernels/julia-{julia_ver}'],
+        {'ijulia_version': ijulia_ver, 'julia_version': julia_ver}
+    )
+
+    yield ModuleInfo(
+        name=mod_name,
+        kname='IJulia_new',
+        version=ijulia_ver,
+        mod_path=str(modulefile_path),
+        root_path=str(root_path),
+    )
+
+    modulefile_path.remove()
+    root_path.remove()
+
+@pytest.fixture
+def ijulia_module3(module_factory, mock_julia) -> Generator[ModuleInfo, None, None]:
+    """Add a mock IJulia module to the MODULEPATH."""
+    mod_name, ijulia_ver, julia_ver = 'IJulia', '0.2', '1.9.6'
+    modulefile_path, root_path = module_factory(
+        mod_name, ijulia_ver, JULIA_MODULE_TEMPLATE_LUA,
+        [f'jupyter/kernels/julia-{julia_ver}'],
+        {'ijulia_version': ijulia_ver, 'julia_version': julia_ver}
+    )
+
+    yield ModuleInfo(
+        name=mod_name,
+        kname='IJulia_old',
         version=ijulia_ver,
         mod_path=str(modulefile_path),
         root_path=str(root_path),

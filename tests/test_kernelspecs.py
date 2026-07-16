@@ -4,9 +4,7 @@ from dataclasses import asdict
 
 from commons import kernelspec_response_common
 
-from easybuild_jupyter_kernels.kernelspec import (
-    CLING_CPP_STDS, MODULE_KERNEL_MAP, KernelData,
-)
+from easybuild_jupyter_kernels.kernelspec import CLING_CPP_STDS, MODULE_KERNEL_MAP, KernelData
 
 
 def compare_dicts(dct1, dct2):
@@ -94,6 +92,45 @@ async def test_kernels_endpoint_multiple_module(jp_fetch, jupyter_server_module1
     # Only the expected kernels should be present, no additional kernels from modules
     assert len(kernelspecs) == 0
 
+async def test_kernels_endpoint_version_filter(jp_fetch, ijulia_module1, ijulia_module2):
+    """Test the /api/kernelspecs endpoint with 2 kernels of the same module but different version filters."""
+    kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
+
+    assert (
+        (ijulia_module1.name == ijulia_module2.name) and
+        (ijulia_module1.kname != ijulia_module2.kname)
+    ), 'Test requires 2 kernels using the same module but different kernel names'
+
+    for module in [ijulia_module1, ijulia_module2]:
+        expected_kernel_name = f"{module.kname}__{module.version}"
+        kernel = kernelspecs.pop(expected_kernel_name, None)
+        assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
+
+    # Only the expected kernels should be present, no additional kernels from modules
+    assert len(kernelspecs) == 0
+
+async def test_kernels_endpoint_launcher_args_env(jp_fetch, ijulia_module1, ijulia_module3):
+    """Test the /api/kernelspecs endpoint to check that 2 kernels that require overwritng the launcher arg
+    do not reuse the same value from the first found.
+    Specifically test changes in 0bedd3bc0b86c1ba4429e58226678c490578da38"""
+    kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
+
+    assert (
+        (ijulia_module1.name == ijulia_module3.name) and
+        (ijulia_module1.kname == ijulia_module3.kname)
+    ), 'Test requires 2 kernels using the same module and same kernel name'
+
+    for module in [ijulia_module1, ijulia_module3]:
+        expected_kernel_name = f"{module.kname}__{module.version}"
+        kernel = kernelspecs.pop(expected_kernel_name, None)
+        assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
+
+        argv = ' '.join(kernel['spec']['argv'])
+        assert module.root_path in argv, f"{module.root_path} not found in argv for {expected_kernel_name} kernel"
+
+    # Only the expected kernels should be present, no additional kernels from modules
+    assert len(kernelspecs) == 0
+
 async def test_kernels_endpoint_preloaded_python(
         monkeypatch,
         jp_fetch, jupyter_server_module1, jupyter_server_module2, jupyter_server_module3
@@ -157,19 +194,22 @@ async def test_kernel_cling(jp_fetch, cling_module1, mock_jupyter_cling_kernel):
 
 
 async def test_kernel_all(
-        jp_fetch, jupyter_server_module1, ijulia_module1, octave_module1, rootkernel_module1, irkernel_module1,
+        jp_fetch, jupyter_server_module1,
+        ijulia_module1, ijulia_module2,
+        octave_module1, rootkernel_module1, irkernel_module1,
         jpk_bash_module1
     ):
     """Test the /api/kernelspecs endpoint with one of every module type."""
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
 
     for module in [
-            jupyter_server_module1, ijulia_module1, octave_module1, rootkernel_module1, irkernel_module1,
-            jpk_bash_module1
+            jupyter_server_module1,
+            ijulia_module1, ijulia_module2,
+            octave_module1, rootkernel_module1, irkernel_module1, jpk_bash_module1
         ]:
         expected_kernel_name = f"{module.kname}__{module.version}"
         kernel = kernelspecs.pop(expected_kernel_name, None)
-        assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs {kernelspecs}"
+        assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs {kernelspecs.keys()}"
 
     # Only the expected kernels should be present, no additional kernels from modules
     assert len(kernelspecs) == 0
