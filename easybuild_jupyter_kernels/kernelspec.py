@@ -287,18 +287,12 @@ class KernelData:
                 data_dct[field_names.pop(0)] = output_lines.pop(0)
             while extra_vars:
                 extra_vars_dct[extra_vars.pop(0).lower()] = output_lines.pop(0)
-                print(f'extra_vars_dct updated to: {extra_vars_dct}')
         except IndexError as exc:
             raise RuntimeError(
                 f"Failed to parse output for module {module}: not enough output lines:\n{output}"
             ) from exc
 
         data_dct['launcher_args_env_vars'] = extra_vars_dct
-        # for var in info_map.launcher_args_env_vars:
-        #     value = extra_vars_dct.get(var.lower())
-        #     if value is None:
-        #         raise RuntimeError(f"Failed to get value for {var} from resolving launcher args for module {module}")
-        #     info_map.launcher_args = tuple(arg.replace(f"${var}", value) for arg in info_map.launcher_args)
 
         return cls(mod_name=mod_name, mod_version=mod_ver, **data_dct)
 
