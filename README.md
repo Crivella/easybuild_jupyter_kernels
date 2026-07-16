@@ -15,7 +15,7 @@ pip install .
 Launch jupyter lab
 
 ```bash
-jupyter lab --ServerApp.kernel_spec_manager_class=easybuild_jupyter_kernels.kernelspec.EBKernelSpecManager
+jupyter lab --ServerApp.kernel_spec_manager_class=easybuild_jupyter_kernels.EBKernelSpecManager
 ```
 
 ## How does this look

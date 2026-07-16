@@ -55,6 +55,9 @@ class ModuleKernelMapping(Mapping):
     kernel_version_env_var: str = field(metadata={
         'help': 'Environment variable that contains the kernel version to be displayed',
     })
+    launcher_version_filter: tuple[LooseVersion | str | None] = field(default=(None, None), metadata={
+        'help': 'Tuple of [min_version, max_version) to filter out incompatible launcher versions',
+    })
     launcher_args_env_vars: tuple[str] = field(default_factory=tuple, metadata={
         'help': 'Environment variables needed to resolve the launcher arguments (e.g., EBROOTIJULIA for IJulia)',
     })
@@ -105,19 +108,30 @@ MODULE_KERNEL_MAP: dict[str, ModuleKernelMapping] = {
         launcher_version_env_var='EBVERSIONPYTHON',
         kernel_version_env_var='EBVERSIONOCTAVE',
     ),
-    'IJulia': ModuleKernelMapping(
+    'IJulia_old': ModuleKernelMapping(
         mod_name='IJulia',
         kernel_display_name='{display_prefix} Julia',
         kernel_language='julia',
         kernel_path='$EBROOTIJULIA/jupyter/kernels/julia-*',
         launcher_exec='julia',
-        # launcher_args=(
-        #     '-i', '--color=yes', '--project=@.', '-e', 'import IJulia; IJulia.run_kernel()', '{connection_file}'
-        # ),
         launcher_args=(
             '-i', '--color=yes', '--project=@.', '$EBROOTIJULIA/packages/IJulia/src/kernel.jl', '{connection_file}'
         ),
+        launcher_version_filter=(None, '1.11'),
         launcher_args_env_vars=('EBROOTIJULIA',),
+        launcher_version_env_var='EBVERSIONJULIA',
+        kernel_version_env_var='EBVERSIONJULIA',
+    ),
+    'IJulia_new': ModuleKernelMapping(
+        mod_name='IJulia',
+        kernel_display_name='{display_prefix} Julia',
+        kernel_language='julia',
+        kernel_path='$EBROOTIJULIA/jupyter/kernels/julia-*',
+        launcher_exec='julia',
+        launcher_args=(
+            '-i', '--color=yes', '--project=@.', '-e', 'import IJulia; IJulia.run_kernel()', '{connection_file}'
+        ),
+        launcher_version_filter=('1.11', None),
         launcher_version_env_var='EBVERSIONJULIA',
         kernel_version_env_var='EBVERSIONJULIA',
     ),
@@ -223,6 +237,9 @@ class KernelData:
         'help': 'EBJULIA_LOAD_PATH environment variable',
         'getcmd': 'echo $EBJULIA_LOAD_PATH'
     })
+    launcher_args_env_vars: dict = field(default_factory=dict, metadata={
+        'help': 'Environment variables needed to resolve the launcher arguments (e.g., EBROOTIJULIA for IJulia)',
+    })
 
     @property
     def launcher_version_sem(self) -> LooseVersion:
@@ -270,16 +287,18 @@ class KernelData:
                 data_dct[field_names.pop(0)] = output_lines.pop(0)
             while extra_vars:
                 extra_vars_dct[extra_vars.pop(0).lower()] = output_lines.pop(0)
+                print(f'extra_vars_dct updated to: {extra_vars_dct}')
         except IndexError as exc:
             raise RuntimeError(
                 f"Failed to parse output for module {module}: not enough output lines:\n{output}"
             ) from exc
 
-        for var in info_map.launcher_args_env_vars:
-            value = extra_vars_dct.get(var.lower())
-            if value is None:
-                raise RuntimeError(f"Failed to get value for {var} from resolving launcher args for module {module}")
-            info_map.launcher_args = tuple(arg.replace(f"${var}", value) for arg in info_map.launcher_args)
+        data_dct['launcher_args_env_vars'] = extra_vars_dct
+        # for var in info_map.launcher_args_env_vars:
+        #     value = extra_vars_dct.get(var.lower())
+        #     if value is None:
+        #         raise RuntimeError(f"Failed to get value for {var} from resolving launcher args for module {module}")
+        #     info_map.launcher_args = tuple(arg.replace(f"${var}", value) for arg in info_map.launcher_args)
 
         return cls(mod_name=mod_name, mod_version=mod_ver, **data_dct)
 
@@ -311,6 +330,20 @@ class EBKernelSpecManager(KernelSpecManager):
 
                 current_launcher_version = os.getenv(info_map.launcher_version_env_var, None)
                 current_kernel_version = os.getenv(info_map.kernel_version_env_var, None)
+
+                min_version, max_version = info_map.launcher_version_filter
+                if min_version and data.launcher_version_sem < min_version:
+                    self.log.debug(
+                        f"Skipping kernel spec for {module} (Python {data.launcher_version}) as it is below the "
+                        f"minimum required version {min_version}"
+                    )
+                    continue
+                if max_version and data.launcher_version_sem >= max_version:
+                    self.log.debug(
+                        f"Skipping kernel spec for {module} (Python {data.launcher_version}) as it is above the "
+                        f"maximum allowed version {max_version}"
+                    )
+                    continue
 
                 # Avoid conflicts for launcher with other externally loaded modules
                 if current_launcher_version and data.launcher_version != current_launcher_version:
@@ -355,9 +388,15 @@ class EBKernelSpecManager(KernelSpecManager):
             self.find_kernel_specs()
 
         kernel_data = self.found_specs[kernel_id]
+        extra_vars_dct = kernel_data.launcher_args_env_vars
         info_map = self.found_infos[kernel_id]
 
         launcher_args = info_map.launcher_args
+
+        for var, value in extra_vars_dct.items():
+            # if value is None:
+            #     raise RuntimeError(f"Failed to get value for {var} from resolving launcher args for module {module}")
+            launcher_args = tuple(arg.replace(f"${var.upper()}", value) for arg in info_map.launcher_args)
         display_name = info_map.kernel_display_name.format(display_prefix=get_display_prefix())
         language = info_map.kernel_language
 
