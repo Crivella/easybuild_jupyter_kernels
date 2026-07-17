@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+from dataclasses import dataclass
 
 from jupyter_client.asynchronous.client import AsyncKernelClient
 
@@ -9,6 +10,20 @@ DEFAULT_KERNELS = ['echo', 'python3']
 
 EESSI_PREFIX = os.environ.get('EESSI_PREFIX', None)
 
+
+@dataclass
+class ModuleInfo:
+    """Data class to hold information about a mock module created for testing."""
+    name: str
+    version: str
+    mod_path: str
+    root_path: str
+    kname: str = None
+    pyver: str = None
+
+    def __post_init__(self):
+        if not self.kname:
+            self.kname = self.name
 
 def kernelspec_response_common(response):
     """Common checks for the /api/kernelspecs endpoint response."""
@@ -24,6 +39,28 @@ def kernelspec_response_common(response):
         assert kernel is not None, f"{kernel_name} kernel not found in kernelspecs"
 
     return kernelspecs
+
+def check_expected_kernels(
+        kernelspecs: dict, expected_modules: list[ModuleInfo],
+        check_empty: bool = True,
+        kernel_assert_checks: list[tuple[callable, callable]] = None,
+        module_filters: list[callable] = None
+    ):
+    """Test that the kernelspecs contain the expected kernels from the expected modules."""
+    for module in expected_modules:
+        if not all(check(module) for check in module_filters or []):
+            continue
+        expected_kernel_name = f"{module.kname}__{module.version}"
+        kernel = kernelspecs.pop(expected_kernel_name, None)
+        assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
+
+        for check, error_msg in kernel_assert_checks or []:
+            if not check(kernel, module):
+                raise AssertionError(error_msg(kernel, module))
+
+    if check_empty:
+        # Only the expected kernels should be present, no additional kernels from modules
+        assert len(kernelspecs) == 0
 
 async def get_kernel_execution_result(kclient: AsyncKernelClient, code: str, timeout: float = 10.0) -> str:
     """Execute code in the kernel and return the result."""
