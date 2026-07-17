@@ -2,7 +2,7 @@
 modules."""
 from dataclasses import asdict
 
-from commons import ModuleInfo, kernelspec_response_common
+from commons import check_expected_kernels, kernelspec_response_common
 
 from easybuild_jupyter_kernels import environment as env
 from easybuild_jupyter_kernels.kernelspec import CLING_CPP_STDS, MODULE_KERNEL_MAP, KernelData
@@ -22,16 +22,6 @@ def compare_dicts(dct1, dct2):
             return False
     return True
 
-def _test_expected_kernels(kernelspecs: dict, expected_modules: list[ModuleInfo], check_empty: bool = True):
-    """Test that the kernelspecs contain the expected kernels from the expected modules."""
-    for module in expected_modules:
-        expected_kernel_name = f"{module.kname}__{module.version}"
-        kernel = kernelspecs.pop(expected_kernel_name, None)
-        assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
-
-    if check_empty:
-        # Only the expected kernels should be present, no additional kernels from modules
-        assert len(kernelspecs) == 0
 
 def test_kernel_data_cache(monkeypatch, jupyter_server_module1):
     """Test that the kernel data cache is populated correctly."""
@@ -82,12 +72,12 @@ async def test_kernels_endpoint_bare(jp_fetch, lmod_environment):
 async def test_kernels_endpoint_one_module(jp_fetch, jupyter_server_module1):
     """Test the /api/kernelspecs endpoint with one jupyter-server module available."""
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
-    _test_expected_kernels(kernelspecs, [jupyter_server_module1])
+    check_expected_kernels(kernelspecs, [jupyter_server_module1])
 
 async def test_kernels_endpoint_multiple_module(jp_fetch, jupyter_server_module1, jupyter_server_module2):
     """Test the /api/kernelspecs endpoint with one jupyter-server module available."""
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
-    _test_expected_kernels(kernelspecs, [jupyter_server_module1, jupyter_server_module2])
+    check_expected_kernels(kernelspecs, [jupyter_server_module1, jupyter_server_module2])
 
 async def test_kernels_endpoint_version_filter(jp_fetch, ijulia_module1, ijulia_module2):
     """Test the /api/kernelspecs endpoint with 2 kernels of the same module but different version filters."""
@@ -98,7 +88,7 @@ async def test_kernels_endpoint_version_filter(jp_fetch, ijulia_module1, ijulia_
         (ijulia_module1.kname != ijulia_module2.kname)
     ), 'Test requires 2 kernels using the same module but different kernel names'
 
-    _test_expected_kernels(kernelspecs, [ijulia_module1, ijulia_module2])
+    check_expected_kernels(kernelspecs, [ijulia_module1, ijulia_module2])
 
 async def test_kernels_endpoint_launcher_args_env(jp_fetch, ijulia_module1, ijulia_module3):
     """Test the /api/kernelspecs endpoint to check that 2 kernels that require overwritng the launcher arg
@@ -111,16 +101,16 @@ async def test_kernels_endpoint_launcher_args_env(jp_fetch, ijulia_module1, ijul
         (ijulia_module1.kname == ijulia_module3.kname)
     ), 'Test requires 2 kernels using the same module and same kernel name'
 
-    for module in [ijulia_module1, ijulia_module3]:
-        expected_kernel_name = f"{module.kname}__{module.version}"
-        kernel = kernelspecs.pop(expected_kernel_name, None)
-        assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
-
-        argv = ' '.join(kernel['spec']['argv'])
-        assert module.root_path in argv, f"{module.root_path} not found in argv for {expected_kernel_name} kernel"
-
-    # Only the expected kernels should be present, no additional kernels from modules
-    assert len(kernelspecs) == 0
+    check_expected_kernels(
+        kernelspecs, [ijulia_module1, ijulia_module3],
+        kernel_assert_checks=[
+            # Checks that content of env variable is replaced into the argv of the kernel spec
+            (
+                lambda k, m: m.root_path in ' '.join(k['spec']['argv']),
+                lambda k, m: f"{m.root_path} not found in argv for {m.kname}__{m.version} kernel"
+            )
+        ]
+    )
 
 async def test_kernels_endpoint_preloaded_python(
         monkeypatch,
@@ -132,22 +122,18 @@ async def test_kernels_endpoint_preloaded_python(
     monkeypatch.setenv('EBVERSIONPYTHON', expected_pyver)
 
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
-    for module in [jupyter_server_module1, jupyter_server_module2, jupyter_server_module3]:
-        if module.pyver == expected_pyver:
-            expected_kernel_name = f"{module.kname}__{module.version}"
-            m1_kernel = kernelspecs.pop(expected_kernel_name, None)
-            assert m1_kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
-
-    # Only the expected kernels should be present, no additional kernels from modules
-    assert len(kernelspecs) == 0
+    check_expected_kernels(
+        kernelspecs, [jupyter_server_module1, jupyter_server_module2, jupyter_server_module3],
+        module_filters=[
+            lambda m: m.pyver == expected_pyver
+        ]
+    )
 
 async def test_kernels_endpoint_preloaded_kernel(monkeypatch, jp_fetch, octave_module1):
     """Test the /api/kernelspecs endpoint returns only kernels compatible with a pre-loaded modules for the same kernel
     """
     monkeypatch.setenv('EBVERSIONOCTAVE', octave_module1.version + 'someotherstring')
-
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
-
     # No kernel should be visible since we are preloading a module for a kernel not compatible with the only
     # octave-kernel module exposed to the system
     assert len(kernelspecs) == 0
@@ -155,19 +141,18 @@ async def test_kernels_endpoint_preloaded_kernel(monkeypatch, jp_fetch, octave_m
 async def test_kernels_display_env_var(mock_display_prefix, jp_fetch, jupyter_server_module1):
     """Test the /api/kernelspecs endpoint with one jupyter-server module available."""
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
-
-    for module in [jupyter_server_module1]:
-        expected_kernel_name = f"{module.kname}__{module.version}"
-        kernel = kernelspecs.pop(expected_kernel_name, None)
-        assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
-        spec = kernel.get('spec')
-        assert spec is not None, f"spec for {expected_kernel_name} kernel not found"
-        display_name = spec.get('display_name', '')
-        assert display_name.startswith(mock_display_prefix), \
-            f"display_name for {expected_kernel_name} '{display_name}' kernel does not start with {mock_display_prefix}"
-
-    # Only the expected kernels should be present, no additional kernels from modules
-    assert len(kernelspecs) == 0
+    check_expected_kernels(
+        kernelspecs, [jupyter_server_module1],
+        kernel_assert_checks=[
+            (
+                lambda k, m: k['spec']['display_name'].startswith(mock_display_prefix),
+                lambda k, m: (
+                    f"display_name for {m.kname}__{m.version} '{k['spec']['display_name']}' "
+                    f"kernel does not start with {mock_display_prefix}"
+                )
+            )
+        ]
+    )
 
 async def test_kernel_cling(jp_fetch, cling_module1, mock_jupyter_cling_kernel):
     """Test the /api/kernelspecs endpoint with one of every module type."""
@@ -189,7 +174,7 @@ async def test_kernel_all(
     ):
     """Test the /api/kernelspecs endpoint with one of every module type."""
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
-    _test_expected_kernels(kernelspecs, [
+    check_expected_kernels(kernelspecs, [
         jupyter_server_module1,
         ijulia_module1, ijulia_module2,
         octave_module1, rootkernel_module1, irkernel_module1, jpk_bash_module1
@@ -207,7 +192,7 @@ async def test_kernel_submodules1(monkeypatch, jp_fetch, submodule_environment1,
     monkeypatch.setenv(env.INIT_MODULES_ENV_NAME, module)
 
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
-    _test_expected_kernels(kernelspecs, [jupyter_server_module_sub1])
+    check_expected_kernels(kernelspecs, [jupyter_server_module_sub1])
 
 async def test_kernel_submodules2(monkeypatch, jp_fetch, submodule_environment2, jupyter_server_module_sub2):
     """Test that kernels in submodule 1 are correctly detected when using it as an init module"""
@@ -216,7 +201,7 @@ async def test_kernel_submodules2(monkeypatch, jp_fetch, submodule_environment2,
     monkeypatch.setenv(env.INIT_MODULES_ENV_NAME, module)
 
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
-    _test_expected_kernels(kernelspecs, [jupyter_server_module_sub2])
+    check_expected_kernels(kernelspecs, [jupyter_server_module_sub2])
 
 async def test_kernel_submodules_all(
         monkeypatch, jp_fetch,
@@ -232,15 +217,15 @@ async def test_kernel_submodules_all(
     module1 = f"{info1.name}/{info1.version}"
     monkeypatch.setenv(env.INIT_MODULES_ENV_NAME, module1)
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
-    _test_expected_kernels(kernelspecs, [jupyter_server_module_sub1])
+    check_expected_kernels(kernelspecs, [jupyter_server_module_sub1])
 
     # Test that only module 2 is detected even if both submodules are available, when INIT is set to only load submod 2
     module2 = f"{info2.name}/{info2.version}"
     monkeypatch.setenv(env.INIT_MODULES_ENV_NAME, module2)
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
-    _test_expected_kernels(kernelspecs, [jupyter_server_module_sub2])
+    check_expected_kernels(kernelspecs, [jupyter_server_module_sub2])
 
     module_all = f"{module1},{module2}"
     monkeypatch.setenv(env.INIT_MODULES_ENV_NAME, module_all)
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
-    _test_expected_kernels(kernelspecs, [jupyter_server_module_sub1, jupyter_server_module_sub2])
+    check_expected_kernels(kernelspecs, [jupyter_server_module_sub1, jupyter_server_module_sub2])

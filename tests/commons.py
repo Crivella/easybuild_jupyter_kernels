@@ -40,6 +40,28 @@ def kernelspec_response_common(response):
 
     return kernelspecs
 
+def check_expected_kernels(
+        kernelspecs: dict, expected_modules: list[ModuleInfo],
+        check_empty: bool = True,
+        kernel_assert_checks: list[tuple[callable, callable]] = None,
+        module_filters: list[callable] = None
+    ):
+    """Test that the kernelspecs contain the expected kernels from the expected modules."""
+    for module in expected_modules:
+        if not all(check(module) for check in module_filters or []):
+            continue
+        expected_kernel_name = f"{module.kname}__{module.version}"
+        kernel = kernelspecs.pop(expected_kernel_name, None)
+        assert kernel is not None, f"{expected_kernel_name} kernel not found in kernelspecs"
+
+        for check, error_msg in kernel_assert_checks or []:
+            if not check(kernel, module):
+                raise AssertionError(error_msg(kernel, module))
+
+    if check_empty:
+        # Only the expected kernels should be present, no additional kernels from modules
+        assert len(kernelspecs) == 0
+
 async def get_kernel_execution_result(kclient: AsyncKernelClient, code: str, timeout: float = 10.0) -> str:
     """Execute code in the kernel and return the result."""
     msg_id = kclient.execute(code, reply=False)
