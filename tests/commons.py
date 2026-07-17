@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+from dataclasses import dataclass
 
 from jupyter_client.asynchronous.client import AsyncKernelClient
 
@@ -9,6 +10,20 @@ DEFAULT_KERNELS = ['echo', 'python3']
 
 EESSI_PREFIX = os.environ.get('EESSI_PREFIX', None)
 
+
+@dataclass
+class ModuleInfo:
+    """Data class to hold information about a mock module created for testing."""
+    name: str
+    version: str
+    mod_path: str
+    root_path: str
+    kname: str = None
+    pyver: str = None
+
+    def __post_init__(self):
+        if not self.kname:
+            self.kname = self.name
 
 def kernelspec_response_common(response):
     """Common checks for the /api/kernelspecs endpoint response."""
