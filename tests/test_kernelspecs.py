@@ -58,7 +58,7 @@ def test_kernel_data_cache(monkeypatch, jupyter_server_module1):
     assert compare_dicts(asdict(data1), asdict(data3)), \
         f"KernelData instances are not equal after cache clear: {dct1} != {dct3}"
 
-async def test_kernels_endpoint_bare(jp_fetch, lmod_environment):
+async def test_kernels_endpoint_bare(jp_fetch, lmod_environment_loaded):
     """Test the /api/kernelspecs endpoint without any modules available.
 
     Tests that the custom EBKernelSpecManager still finds the default kernels (echo and python3).
