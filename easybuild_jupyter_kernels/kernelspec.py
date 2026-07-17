@@ -6,15 +6,34 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, fields
 from functools import lru_cache
 
-from jupyter_client.kernelspec import (KernelSpec, KernelSpecManager,
-                                       NoSuchKernel)
+from jupyter_client.kernelspec import KernelSpec, KernelSpecManager, NoSuchKernel
 
-DISPLAY_PREFIX = os.getenv('EB_JUPYTER_KERNEL_DISPLAY_PREFIX', 'EasyBuild\'s')
+from .environment import ModuleSorting, get_display_prefix, get_kernel_display_limit, get_module_sorting
+from .loose_version import LooseVersion
 
+
+def module_avail(module_name: str) -> list[str]:
+    """Return a list of available modules for a given module name using `module avail`."""
+    try:
+        output = subprocess.check_output(
+            f'module --terse avail {module_name}/',
+            shell=True, executable='/bin/bash',
+            stderr=subprocess.STDOUT
+        )
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Failed to find {module_name} from environment modules: {e.output.decode('utf-8')}") from e
+    modules = output.decode('utf-8').splitlines()
+    res = [line.strip() for line in modules if line.strip()]
+    res = list(filter(lambda module: not module.startswith('/'), res))
+
+    return res
 
 @dataclass
 class ModuleKernelMapping(Mapping):
-    """Data class to hold information about a kernel spec derived from an EasyBuild module."""
+    """Map that hold information needed to build a `KernelData` instance from a specific module."""
+    mod_name: str = field(metadata={
+        'help': 'Name of the module (e.g., jupyter-server)',
+    })
     kernel_display_name: str = field(metadata={
         'help': 'Display name of the kernel (e.g., Python 3)',
     })
@@ -27,7 +46,7 @@ class ModuleKernelMapping(Mapping):
     launcher_exec: str = field(metadata={
         'help': 'Executable used to launch the kernel (e.g., python)',
     })
-    launcher_args: list[str] = field(metadata={
+    launcher_args: tuple[str] = field(metadata={
         'help': 'Arguments to pass to the launcher executable',
     })
     launcher_version_env_var: str = field(metadata={
@@ -36,9 +55,15 @@ class ModuleKernelMapping(Mapping):
     kernel_version_env_var: str = field(metadata={
         'help': 'Environment variable that contains the kernel version to be displayed',
     })
-    launcher_args_env_vars: list[str] = field(default_factory=list, metadata={
+    launcher_version_filter: tuple[LooseVersion | str | None] = field(default=(None, None), metadata={
+        'help': 'Tuple of [min_version, max_version) to filter out incompatible launcher versions',
+    })
+    launcher_args_env_vars: tuple[str] = field(default_factory=tuple, metadata={
         'help': 'Environment variables needed to resolve the launcher arguments (e.g., EBROOTIJULIA for IJulia)',
     })
+
+    def __post_init__(self):
+        self._hash = hash(tuple(sorted(self.items())))
 
     def __getitem__(self, key):
         """Allow dictionary-like access to the attributes of the dataclass."""
@@ -52,6 +77,9 @@ class ModuleKernelMapping(Mapping):
         """Return the number of attributes in the dataclass."""
         return len(asdict(self))
 
+    def __hash__(self):
+        return self._hash
+
     def items(self):
         """Return a dictionary of the attributes of the dataclass."""
         return asdict(self).items()
@@ -61,70 +89,102 @@ class ModuleKernelMapping(Mapping):
 # from the environment module.
 MODULE_KERNEL_MAP: dict[str, ModuleKernelMapping] = {
     'jupyter-server': ModuleKernelMapping(
-        kernel_display_name=f'{DISPLAY_PREFIX} Python',
+        mod_name='jupyter-server',
+        kernel_display_name='{display_prefix} Python',
         kernel_language='python',
         kernel_path='$EBROOTJUPYTERMINSERVER/share/jupyter/kernels/python3',
         launcher_exec='python',
-        launcher_args=['-m', 'ipykernel_launcher', '-f', '{connection_file}'],
+        launcher_args=('-m', 'ipykernel_launcher', '-f', '{connection_file}'),
         launcher_version_env_var='EBVERSIONPYTHON',
         kernel_version_env_var='EBVERSIONPYTHON',
     ),
     'octave-kernel': ModuleKernelMapping(
-        kernel_display_name=f'{DISPLAY_PREFIX} Octave',
+        mod_name='octave-kernel',
+        kernel_display_name='{display_prefix} Octave',
         kernel_language='octave',
         kernel_path='$EBROOTOCTAVEMINKERNEL/share/jupyter/kernels/octave/images',
         launcher_exec='python',
-        launcher_args=['-m', 'octave_kernel', '-f', '{connection_file}'],
+        launcher_args=('-m', 'octave_kernel', '-f', '{connection_file}'),
         launcher_version_env_var='EBVERSIONPYTHON',
         kernel_version_env_var='EBVERSIONOCTAVE',
     ),
-    # 'Cling': ModuleKernelMapping(
-    #     kernel_display_name=f'{DISPLAY_PREFIX} C++ (Cling)',
-    #     kernel_language='C++',
-    #     kernel_path='$EBROOTCLING/share/jupyter/kernels/cling',
-    #     launcher_exec='jupyter-cling-kernel',
-    #     launcher_args=['-f', '{connection_file}', '--std=c++20'],
-    #     launcher_version_env_var='EBVERSIONCLING',
-    #     kernel_version_env_var='EBVERSIONCLING',
-    # ),
-    'IJulia': ModuleKernelMapping(
-        kernel_display_name=f'{DISPLAY_PREFIX} Julia',
+    'IJulia_old': ModuleKernelMapping(
+        mod_name='IJulia',
+        kernel_display_name='{display_prefix} Julia',
         kernel_language='julia',
         kernel_path='$EBROOTIJULIA/jupyter/kernels/julia-*',
         launcher_exec='julia',
-        # launcher_args=[
-        #     '-i', '--color=yes', '--project=@.', '-e', 'import IJulia; IJulia.run_kernel()', '{connection_file}'
-        # ],
-        launcher_args=[
+        launcher_args=(
             '-i', '--color=yes', '--project=@.', '$EBROOTIJULIA/packages/IJulia/src/kernel.jl', '{connection_file}'
-        ],
-        launcher_args_env_vars=['EBROOTIJULIA'],
+        ),
+        launcher_version_filter=(None, '1.11'),
+        launcher_args_env_vars=('EBROOTIJULIA',),
         launcher_version_env_var='EBVERSIONJULIA',
         kernel_version_env_var='EBVERSIONJULIA',
     ),
-    'ROOT': ModuleKernelMapping(
-        kernel_display_name=f'{DISPLAY_PREFIX} ROOT C++',
+    'IJulia_new': ModuleKernelMapping(
+        mod_name='IJulia',
+        kernel_display_name='{display_prefix} Julia',
+        kernel_language='julia',
+        kernel_path='$EBROOTIJULIA/jupyter/kernels/julia-*',
+        launcher_exec='julia',
+        launcher_args=(
+            '-i', '--color=yes', '--project=@.', '-e', 'import IJulia; IJulia.run_kernel()', '{connection_file}'
+        ),
+        launcher_version_filter=('1.11', None),
+        launcher_version_env_var='EBVERSIONJULIA',
+        kernel_version_env_var='EBVERSIONJULIA',
+    ),
+    'root-kernel': ModuleKernelMapping(
+        mod_name='root-kernel',
+        kernel_display_name='{display_prefix} ROOT C++',
         kernel_language='c++',
         kernel_path='$EBROOTROOT/etc/notebook/kernels/root/',
         launcher_exec='python',
-        launcher_args=['-m', 'JupyROOT.kernel.rootkernel', '-f', '{connection_file}'],
+        launcher_args=('-m', 'JupyROOT.kernel.rootkernel', '-f', '{connection_file}'),
         launcher_version_env_var='EBVERSIONPYTHON',
         kernel_version_env_var='EBVERSIONROOT',
     ),
     'IRkernel': ModuleKernelMapping(
-        kernel_display_name=f'{DISPLAY_PREFIX} R',
+        mod_name='IRkernel',
+        kernel_display_name='{display_prefix} R',
         kernel_language='R',
         kernel_path='$EBROOTIRKERNEL/IRkernel/kernelspec/',
         launcher_exec='R',
-        launcher_args=['--slave', '-e', 'IRkernel::main()', '--args', '{connection_file}'],
+        launcher_args=('--slave', '-e', 'IRkernel::main()', '--args', '{connection_file}'),
         launcher_version_env_var='EBVERSIONR',
         kernel_version_env_var='EBVERSIONR',
     ),
+    'bash': ModuleKernelMapping(
+        mod_name='jupyter-bash-kernel',
+        kernel_display_name='{display_prefix} Bash',
+        kernel_language='bash',
+        kernel_path='$EBROOTJUPYTERMINBASHMINKERNEL/share/jupyter/kernels/bash',
+        launcher_exec='python',
+        launcher_args=('-m', 'bash_kernel', '-f', '{connection_file}'),
+        launcher_version_env_var='EBVERSIONPYTHON',
+        kernel_version_env_var='EBVERSIONJUPYTERMINBASHMINKERNEL',
+    ),
 }
+
+CLING_CPP_STDS = ['11', '14', '17', '20', '2b', '1z']
+
+MODULE_KERNEL_MAP.update({
+    f'cling-{std}': ModuleKernelMapping(
+        mod_name='cling-kernel',
+        kernel_display_name=f'{{display_prefix}} C++{std} (Cling)',
+        kernel_language='C++',
+        kernel_path=f'$EBROOTCLINGMINKERNEL/share/jupyter/kernels/cling-cpp{std}',
+        launcher_exec='jupyter-cling-kernel',
+        launcher_args=('-f', '{connection_file}', f'--std=c++{std}'),
+        launcher_version_env_var='EBVERSIONCLING',
+        kernel_version_env_var='EBVERSIONCLING',
+    ) for std in CLING_CPP_STDS
+})
 
 @dataclass
 class KernelData:
-    """Data class to hold information about a kernel spec derived from an EasyBuild `jupyter-server` module.
+    """Data class to hold information about a kernel spec derived from an EasyBuild module.
     The metadata for each field includes an help and an optional getcmd key, which is a shell command to retrieve the
     value of the field."""
     mod_name: str = field(metadata={
@@ -177,14 +237,20 @@ class KernelData:
         'help': 'EBJULIA_LOAD_PATH environment variable',
         'getcmd': 'echo $EBJULIA_LOAD_PATH'
     })
+    launcher_args_env_vars: dict = field(default_factory=dict, metadata={
+        'help': 'Environment variables needed to resolve the launcher arguments (e.g., EBROOTIJULIA for IJulia)',
+    })
+
+    @property
+    def launcher_version_sem(self) -> LooseVersion:
+        """Return the launcher version as a tuple of integers for semantic versioning comparison."""
+        return LooseVersion(self.launcher_version)
 
     @classmethod
     @lru_cache(maxsize=None)
-    def from_env_module(cls, module: str) -> 'KernelData':
-        """Create a KernelData instance from an environment module."""
+    def from_env_module(cls, module: str, info_map: ModuleKernelMapping) -> 'KernelData':
+        """Create a KernelData instance from an environment module and a Mapping on how to extract its information."""
         mod_name, mod_ver = module.split('/')
-
-        info_map = MODULE_KERNEL_MAP.get(mod_name)
 
         cmds = [f"module load {module} > /dev/null 2>&1"]
         field_names = []
@@ -226,11 +292,7 @@ class KernelData:
                 f"Failed to parse output for module {module}: not enough output lines:\n{output}"
             ) from exc
 
-        for var in info_map.launcher_args_env_vars:
-            value = extra_vars_dct.get(var.lower())
-            if value is None:
-                raise RuntimeError(f"Failed to get value for {var} from resolving launcher args for module {module}")
-            info_map.launcher_args = [arg.replace(f"${var}", value) for arg in info_map.launcher_args]
+        data_dct['launcher_args_env_vars'] = extra_vars_dct
 
         return cls(mod_name=mod_name, mod_version=mod_ver, **data_dct)
 
@@ -240,26 +302,7 @@ class EBKernelSpecManager(KernelSpecManager):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.found_specs: dict[str, KernelData] = {}
-
-    def _find_jupyter_server_modules(self):
-        """Use module avail to find available kenrnel-shipping modules."""
-        res = []
-
-        for module_name, _ in MODULE_KERNEL_MAP.items():
-            try:
-                output = subprocess.check_output(
-                    f'module --terse avail {module_name}/',
-                    shell=True, executable='/bin/bash',
-                    stderr=subprocess.STDOUT
-                )
-                modules = output.decode('utf-8').splitlines()
-                res += [line.strip() for line in modules if line.strip()]
-                # return [line.strip() for line in modules if line.strip()]
-            except subprocess.CalledProcessError as e:
-                self.log.warning(f"Failed to find {module_name} from environment modules: {e.output.decode('utf-8')}")
-                # return []
-
-        return res
+        self.found_infos: dict[str, ModuleKernelMapping] = {}
 
     def find_kernel_specs(self):
         """Use the original method to find kernel specs, and then add any `jupyter-server` module kernels.
@@ -267,38 +310,65 @@ class EBKernelSpecManager(KernelSpecManager):
         """
         specs = super().find_kernel_specs()
 
-        server_modules = self._find_jupyter_server_modules()
-        for mod in server_modules:
-            if mod.startswith('/'):
-                continue
-            data = KernelData.from_env_module(mod)
+        for kernel_name, info_map in MODULE_KERNEL_MAP.items():
+            mod_name = info_map.mod_name
 
-            info_map = MODULE_KERNEL_MAP[data.mod_name]
-            current_launcher_version = os.getenv(info_map.launcher_version_env_var, None)
-            current_kernel_version = os.getenv(info_map.kernel_version_env_var, None)
+            kernel_specs = []
+            for module in module_avail(mod_name):
+                found_name, found_ver = module.split('/')
+                if found_name != mod_name:
+                    raise RuntimeError(f"Unexpected module name {found_name} for {mod_name} in module_avail() output")
+                kernel_id = f'{kernel_name}__{found_ver}'
 
-            # If another Easybuild Python is already loaded in the environment, with potentially other modules on top
-            # of it (eg SciPy stack), avoid exposing kernels that would be incompatible with it
-            if current_launcher_version and data.launcher_version != current_launcher_version:
-                self.log.debug(
-                    f"Skipping kernel spec for {mod} (Python {data.launcher_version}) as it does not match current "
-                    f"externally loaded Python version {current_launcher_version}"
-                )
-                continue
-            if current_kernel_version and data.kernel_version != current_kernel_version:
-                self.log.debug(
-                    f"Skipping kernel spec for {mod} (Kernel version {data.kernel_version}) as it does not match "
-                    f"current externally loaded kernel version {current_kernel_version}"
-                )
-                continue
-            name = mod.replace('/', '__')
-            specs[name] = data.kernel_path
-            self.found_specs[name] = data
-            self.log.debug(f"Found kernel spec for {name}: {data.kernel_path} (Python {data.launcher_version})")
+                data = KernelData.from_env_module(module, info_map)
+
+                current_launcher_version = os.getenv(info_map.launcher_version_env_var, None)
+                current_kernel_version = os.getenv(info_map.kernel_version_env_var, None)
+
+                min_version, max_version = info_map.launcher_version_filter
+                if min_version and data.launcher_version_sem < min_version:
+                    self.log.debug(
+                        f"Skipping kernel spec for {module} (Python {data.launcher_version}) as it is below the "
+                        f"minimum required version {min_version}"
+                    )
+                    continue
+                if max_version and data.launcher_version_sem >= max_version:
+                    self.log.debug(
+                        f"Skipping kernel spec for {module} (Python {data.launcher_version}) as it is above the "
+                        f"maximum allowed version {max_version}"
+                    )
+                    continue
+
+                # Avoid conflicts for launcher with other externally loaded modules
+                if current_launcher_version and data.launcher_version != current_launcher_version:
+                    self.log.debug(
+                        f"Skipping kernel spec for {module} (Python {data.launcher_version}) as it does not match "
+                        f"current externally loaded Python version {current_launcher_version}"
+                    )
+                    continue
+                # Avoid conflicts for kernel with other externally loaded modules
+                if current_kernel_version and data.kernel_version != current_kernel_version:
+                    self.log.debug(
+                        f"Skipping kernel spec for {module} (Kernel version {data.kernel_version}) as it does not "
+                        f"match current externally loaded kernel version {current_kernel_version}"
+                    )
+                    continue
+                kernel_specs.append((kernel_id, data, info_map))
+
+            kernel_display_limit = get_kernel_display_limit()
+            if kernel_display_limit:
+                sorting = get_module_sorting()
+                reverse = sorting == ModuleSorting.DESCENDING
+                kernel_specs = list(sorted(kernel_specs, key=lambda x: x[1].launcher_version_sem, reverse=reverse))
+                kernel_specs = kernel_specs[:kernel_display_limit]
+            for kernel_id, data, info_map in kernel_specs:
+                specs[kernel_id] = data.kernel_path
+                self.found_specs[kernel_id] = data
+                self.found_infos[kernel_id] = info_map
 
         return specs
 
-    def _get_kernel_spec(self, kernel_name) -> KernelSpec:
+    def _get_kernel_spec(self, kernel_id) -> KernelSpec:
         """Get the kernel spec for a given kernel name, using the found_specs dictionary.
 
         Args:
@@ -311,15 +381,17 @@ class EBKernelSpecManager(KernelSpecManager):
             self.log.warning('No found_specs available, calling find_kernel_specs()')
             self.find_kernel_specs()
 
-        kernel_data = self.found_specs.get(kernel_name)
-        if not kernel_data:
-            self.log.error(f"Kernel data for {kernel_name} not found in found_specs")
-            raise ValueError(f"Kernel data for {kernel_name} not found in found_specs")
-
-        info_map = MODULE_KERNEL_MAP[kernel_data.mod_name]
+        kernel_data = self.found_specs[kernel_id]
+        extra_vars_dct = kernel_data.launcher_args_env_vars
+        info_map = self.found_infos[kernel_id]
 
         launcher_args = info_map.launcher_args
-        display_name = info_map.kernel_display_name
+
+        for var, value in extra_vars_dct.items():
+            # if value is None:
+            #     raise RuntimeError(f"Failed to get value for {var} from resolving launcher args for module {module}")
+            launcher_args = tuple(arg.replace(f"${var.upper()}", value) for arg in info_map.launcher_args)
+        display_name = info_map.kernel_display_name.format(display_prefix=get_display_prefix())
         language = info_map.kernel_language
 
         existing_ppath = os.getenv('PYTHONPATH', '').split(os.pathsep)
@@ -363,18 +435,16 @@ class EBKernelSpecManager(KernelSpecManager):
             env[var] = value
 
         kernel_dct = {
-            'argv': [kernel_data.launcher_exe] + launcher_args,
+            'argv': (kernel_data.launcher_exe, *launcher_args),
             'display_name': f"{display_name} ({kernel_data.kernel_version})",
             'resource_dir': kernel_data.kernel_path,
             'language': language,
             'env': env
         }
 
-        self.log.debug(f"Creating KernelSpec for {kernel_name}: {kernel_dct}")
+        self.log.debug(f"Creating KernelSpec for {kernel_id}: {kernel_dct}")
 
-        res = KernelSpec(**kernel_dct)
-
-        return res
+        return KernelSpec(**kernel_dct)
 
     def get_kernel_spec(self, kernel_name) -> KernelSpec:
         """Get the kernel spec for a given kernel name, trying both the superclass method and the custom method."""

@@ -11,7 +11,7 @@ from jupyter_client import manager
 from jupyter_client.manager import AsyncKernelManager
 
 from easybuild_jupyter_kernels import kernelspec
-from easybuild_jupyter_kernels.kernelspec import EBKernelSpecManager
+from easybuild_jupyter_kernels.kernelspec import CLING_CPP_STDS, EBKernelSpecManager
 
 pytest_plugins = ['pytest_jupyter.jupyter_server', 'pytest_jupyter.jupyter_client']
 
@@ -56,6 +56,17 @@ setenv("EBROOTIRKERNEL", "{prefix}")
 prepend_path("R_LIBS_SITE", "{prefix}/lib/R/site-library")
 """
 
+CLING_KERNEL_MODULE_TEMPLATE_LUA = """
+setenv("EBVERSIONCLING", "{cling_version}")
+setenv("EBROOTCLINGMINKERNEL", "{prefix}")
+"""
+
+JUPYTER_BASH_KERNEL_TEMPLATE_LUA = """
+setenv("EBVERSIONPYTHON", "{py_version}")
+setenv("EBROOTJUPYTERMINBASHMINKERNEL", "{prefix}")
+setenv("EBVERSIONJUPYTERMINBASHMINKERNEL", "{jpk_bash_version}")
+"""
+
 def has_lmod():
     """Check if Lmod is available in the environment."""
     lmod_cmd = os.environ.get('LMOD_CMD')
@@ -72,7 +83,12 @@ class ModuleInfo:
     version: str
     mod_path: str
     root_path: str
-    pyver: str
+    kname: str = None
+    pyver: str = None
+
+    def __post_init__(self):
+        if not self.kname:
+            self.kname = self.name
 
 
 @pytest.fixture
@@ -122,6 +138,11 @@ def mock_r(monkeypatch, tmpdir):
     mock_exec(monkeypatch, tmpdir, 'R')
 
 @pytest.fixture
+def mock_jupyter_cling_kernel(monkeypatch, tmpdir):
+    """Fixture to mock the cling kernel executable for testing."""
+    mock_exec(monkeypatch, tmpdir, 'jupyter-cling-kernel')
+
+@pytest.fixture
 def module_factory(tmpdir, lmod_environment) -> Callable[[str, str, str, list[str], dict[str, str]], tuple[str, str]]:
     """Factory fixture to create mock Jupyter server modules for testing."""
     def create_module(
@@ -149,6 +170,12 @@ def module_factory(tmpdir, lmod_environment) -> Callable[[str, str, str, list[st
         return modulefile_path, root_path
     return create_module
 
+@pytest.fixture(autouse=True)
+def clear_kernel_data_cache(monkeypatch):
+    """Clear the lru_cache used to generate KernelData from a module-ModuleKernelMapping combo to avoid re-using a
+    module loaded from a previous test"""
+    kernelspec.KernelData.from_env_module.cache_clear()
+
 @pytest.fixture
 def jupyter_server_module1(module_factory) -> Generator[ModuleInfo, None, None]:
     """Add a mock Jupyter server module to the MODULEPATH."""
@@ -167,13 +194,15 @@ def jupyter_server_module1(module_factory) -> Generator[ModuleInfo, None, None]:
         pyver=py_ver,
     )
 
+    print('MODULEPATH:', os.getenv('MODULEPATH'))
+
     modulefile_path.remove()
     root_path.remove()
 
 @pytest.fixture
 def jupyter_server_module2(module_factory) -> Generator[ModuleInfo, None, None]:
     """Add a mock Jupyter server module to the MODULEPATH."""
-    mod_name, mod_ver, py_ver = 'jupyter-server', '2', '3.9'
+    mod_name, mod_ver, py_ver = 'jupyter-server', '2', '3.71'
     modulefile_path, root_path = module_factory(
         mod_name, mod_ver, JUPYTER_SERVER_MODULE_TEMPLATE_LUA,
         ['share/jupyter/kernels/python3'],
@@ -215,7 +244,7 @@ def jupyter_server_module3(module_factory) -> Generator[ModuleInfo, None, None]:
 @pytest.fixture
 def ijulia_module1(module_factory, mock_julia) -> Generator[ModuleInfo, None, None]:
     """Add a mock IJulia module to the MODULEPATH."""
-    mod_name, ijulia_ver, julia_ver = 'IJulia', '0.3', '1.6'
+    mod_name, ijulia_ver, julia_ver = 'IJulia', '0.3', '1.10.6'
     modulefile_path, root_path = module_factory(
         mod_name, ijulia_ver, JULIA_MODULE_TEMPLATE_LUA,
         [f'jupyter/kernels/julia-{julia_ver}'],
@@ -224,10 +253,52 @@ def ijulia_module1(module_factory, mock_julia) -> Generator[ModuleInfo, None, No
 
     yield ModuleInfo(
         name=mod_name,
+        kname='IJulia_old',
         version=ijulia_ver,
         mod_path=str(modulefile_path),
         root_path=str(root_path),
-        pyver=julia_ver,
+    )
+
+    modulefile_path.remove()
+    root_path.remove()
+
+@pytest.fixture
+def ijulia_module2(module_factory, mock_julia) -> Generator[ModuleInfo, None, None]:
+    """Add a mock IJulia module to the MODULEPATH."""
+    mod_name, ijulia_ver, julia_ver = 'IJulia', '0.4', '1.11.6'
+    modulefile_path, root_path = module_factory(
+        mod_name, ijulia_ver, JULIA_MODULE_TEMPLATE_LUA,
+        [f'jupyter/kernels/julia-{julia_ver}'],
+        {'ijulia_version': ijulia_ver, 'julia_version': julia_ver}
+    )
+
+    yield ModuleInfo(
+        name=mod_name,
+        kname='IJulia_new',
+        version=ijulia_ver,
+        mod_path=str(modulefile_path),
+        root_path=str(root_path),
+    )
+
+    modulefile_path.remove()
+    root_path.remove()
+
+@pytest.fixture
+def ijulia_module3(module_factory, mock_julia) -> Generator[ModuleInfo, None, None]:
+    """Add a mock IJulia module to the MODULEPATH."""
+    mod_name, ijulia_ver, julia_ver = 'IJulia', '0.2', '1.9.6'
+    modulefile_path, root_path = module_factory(
+        mod_name, ijulia_ver, JULIA_MODULE_TEMPLATE_LUA,
+        [f'jupyter/kernels/julia-{julia_ver}'],
+        {'ijulia_version': ijulia_ver, 'julia_version': julia_ver}
+    )
+
+    yield ModuleInfo(
+        name=mod_name,
+        kname='IJulia_old',
+        version=ijulia_ver,
+        mod_path=str(modulefile_path),
+        root_path=str(root_path),
     )
 
     modulefile_path.remove()
@@ -255,9 +326,9 @@ def octave_module1(module_factory) -> Generator[ModuleInfo, None, None]:
     root_path.remove()
 
 @pytest.fixture
-def rootcpp_module1(module_factory) -> Generator[ModuleInfo, None, None]:
-    """Add a mock ROOT module to the MODULEPATH."""
-    mod_name, mod_ver, root_ver, py_ver = 'ROOT', '1', '6.26', '3.8'
+def rootkernel_module1(module_factory) -> Generator[ModuleInfo, None, None]:
+    """Add a mock root-kernel module to the MODULEPATH."""
+    mod_name, mod_ver, root_ver, py_ver = 'root-kernel', '1', '6.26', '3.8'
     modulefile_path, root_path = module_factory(
         mod_name, mod_ver, ROOTCPP_MODULE_TEMPLATE_LUA,
         ['etc/notebook/kernels/root/'],
@@ -290,7 +361,49 @@ def irkernel_module1(module_factory, mock_r) -> Generator[ModuleInfo, None, None
         version=mod_ver,
         mod_path=str(modulefile_path),
         root_path=str(root_path),
-        pyver=r_ver,
+    )
+
+    modulefile_path.remove()
+    root_path.remove()
+
+@pytest.fixture
+def cling_module1(module_factory) -> Generator[ModuleInfo, None, None]:
+    """Add a mock cling module to the MODULEPATH."""
+    mod_name, mod_ver, cling_ver = 'cling-kernel', '1', '1.2.3'
+    modulefile_path, root_path = module_factory(
+        mod_name, mod_ver, CLING_KERNEL_MODULE_TEMPLATE_LUA,
+        [f'share/jupyter/kernels/cling-cpp{std}/' for std in CLING_CPP_STDS],
+        {'cling_version': cling_ver}
+    )
+
+    yield ModuleInfo(
+        name=mod_name,
+        kname='cling',
+        version=mod_ver,
+        mod_path=str(modulefile_path),
+        root_path=str(root_path),
+    )
+
+    modulefile_path.remove()
+    root_path.remove()
+
+@pytest.fixture
+def jpk_bash_module1(module_factory) -> Generator[ModuleInfo, None, None]:
+    """Add a mock jpk-bash module to the MODULEPATH."""
+    mod_name, mod_ver, py_ver = 'jupyter-bash-kernel', '1', '3.8'
+    modulefile_path, root_path = module_factory(
+        mod_name, mod_ver, JUPYTER_BASH_KERNEL_TEMPLATE_LUA,
+        ['share/jupyter/kernels/bash'],
+        {'py_version': py_ver, 'jpk_bash_version': mod_ver}
+    )
+
+    yield ModuleInfo(
+        name=mod_name,
+        kname='bash',
+        version=mod_ver,
+        mod_path=str(modulefile_path),
+        root_path=str(root_path),
+        pyver=py_ver,
     )
 
     modulefile_path.remove()
