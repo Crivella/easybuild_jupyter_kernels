@@ -217,13 +217,31 @@ async def test_kernel_submodules_all(
     module1 = f"{info1.name}/{info1.version}"
     monkeypatch.setenv(env.INIT_MODULES_ENV_NAME, module1)
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
-    check_expected_kernels(kernelspecs, [jupyter_server_module_sub1])
+    check_expected_kernels(
+        kernelspecs, [jupyter_server_module_sub1],
+        kernel_assert_checks=[
+            # Check that the init module is included in the display name of the kernel spec
+            (
+                lambda k, m: f'- {module1} -' in k['spec']['display_name'],
+                lambda k, m: f"{module1} not found in display_name for {m.kname}__{m.version} kernel"
+            ),
+        ]
+    )
 
     # Test that only module 2 is detected even if both submodules are available, when INIT is set to only load submod 2
     module2 = f"{info2.name}/{info2.version}"
     monkeypatch.setenv(env.INIT_MODULES_ENV_NAME, module2)
     kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs'))
-    check_expected_kernels(kernelspecs, [jupyter_server_module_sub2])
+    check_expected_kernels(
+        kernelspecs, [jupyter_server_module_sub2],
+        kernel_assert_checks=[
+            # Check that the init module is included in the display name of the kernel spec
+            (
+                lambda k, m: f'- {module2} -' in k['spec']['display_name'],
+                lambda k, m: f"{module2} not found in display_name for {m.kname}__{m.version} kernel"
+            ),
+        ]
+    )
 
     module_all = f"{module1},{module2}"
     monkeypatch.setenv(env.INIT_MODULES_ENV_NAME, module_all)
