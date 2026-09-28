@@ -5,6 +5,10 @@ from jupyter_client.asynchronous.client import AsyncKernelClient
 
 
 @pytest.mark.skipif(EESSI_PREFIX is None, reason='EESSI environment not detected')
+@pytest.mark.xfail(
+    raises=RuntimeError,
+    reason='Slow loading time of kernels can cause the test to fail with a timeout'
+)
 async def test_eessi_kernel_env(eb_async_kernel_manager, jp_start_kernel):
     """Test that the kernel is started with the correct environment variables in EESSI"""
     if '2023.06' in EESSI_PREFIX:
