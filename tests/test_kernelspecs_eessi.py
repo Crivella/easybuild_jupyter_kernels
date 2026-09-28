@@ -5,6 +5,8 @@ from commons import EESSI_PREFIX, kernelspec_response_common
 
 from easybuild_jupyter_kernels import environment as env
 
+MAX_TIMEOUT = 120  # seconds
+
 
 @pytest.mark.skipif(EESSI_PREFIX is None, reason='EESSI environment not detected')
 async def test_eessi_kernels_endpoint(jp_fetch):
@@ -13,7 +15,7 @@ async def test_eessi_kernels_endpoint(jp_fetch):
 
     Tests that the custom EBKernelSpecManager still finds the default kernels (echo and python3).
     """
-    kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs', request_timeout=120))
+    kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs', request_timeout=MAX_TIMEOUT))
 
     assert len(kernelspecs) > 0, 'No kernelspecs found from jupyter-server modules in EESSI'
 
@@ -26,7 +28,7 @@ async def test_eessi_kernels_init_2023(monkeypatch, jp_fetch):
     Setting init to 2023.06 should only find kernels from the 2023.06 stack
     """
     monkeypatch.setenv(env.INIT_MODULES_ENV_NAME, 'EESSI/2023.06')
-    kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs', request_timeout=120))
+    kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs', request_timeout=MAX_TIMEOUT))
 
     assert len(kernelspecs) > 0, 'No kernelspecs found from jupyter-server modules in EESSI 2023.06'
 
@@ -40,7 +42,7 @@ async def test_eessi_kernels_init_2025(monkeypatch, jp_fetch):
     Setting init to 2025.06 should only find kernels from the 2025.06 stack
     """
     monkeypatch.setenv(env.INIT_MODULES_ENV_NAME, 'EESSI/2025.06')
-    kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs', request_timeout=120))
+    kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs', request_timeout=MAX_TIMEOUT))
 
     assert len(kernelspecs) > 0, 'No kernelspecs found from jupyter-server modules in EESSI 2025.06'
 
@@ -54,7 +56,7 @@ async def test_eessi_kernels_init_2023_2025(monkeypatch, jp_fetch):
     Setting init to both 2023.06 and 2025.06 should find kernels from both stack
     """
     monkeypatch.setenv(env.INIT_MODULES_ENV_NAME, 'EESSI/2023.06,EESSI/2025.06')
-    kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs', request_timeout=120))
+    kernelspecs = kernelspec_response_common(await jp_fetch('api/kernelspecs', request_timeout=MAX_TIMEOUT))
 
     assert len(kernelspecs) > 0, 'No kernelspecs found from jupyter-server modules in EESSI 2025.06'
 
