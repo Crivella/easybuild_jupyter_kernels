@@ -16,6 +16,7 @@ DEFAULT_MODULE_SORTING = ModuleSorting.DESCENDING.value
 MODULE_SORTING_ENV_NAME = 'EB_JUPYTER_KERNEL_MODULE_SORTING'
 DISPLAT_PREFIX_ENV_NAME = 'EB_JUPYTER_KERNEL_DISPLAY_PREFIX'
 DISPLAY_LIMIT_ENV_NAME = 'EB_JUPYTER_KERNEL_LIMIT'
+INIT_MODULES_ENV_NAME = 'EB_JUPYTER_KERNEL_INIT_MODULES'
 
 
 def get_display_prefix() -> str:
@@ -42,3 +43,11 @@ def get_module_sorting() -> ModuleSorting:
             f"Invalid value for {MODULE_SORTING_ENV_NAME}: {res}. Allowed values are: {allowed}"
         ) from exc
     return res
+
+def get_init_modules() -> list[str]:
+    """Get the list of modules that should be loaded before attempting to find kernels. EG can be used to
+    get kernels from different releases of EESSI at the same time.
+    If not set returns a list with an empty string, and not an empty list to allow one check to be performed with no
+    modules loaded."""
+    init_modules = os.getenv(INIT_MODULES_ENV_NAME, '')
+    return [mod.strip() for mod in init_modules.split(',') if mod.strip()] or list([''])

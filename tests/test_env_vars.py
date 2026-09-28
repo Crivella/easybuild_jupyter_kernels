@@ -47,6 +47,17 @@ def test_get_display_prefix_none(monkeypatch):
     monkeypatch.delenv('EB_JUPYTER_KERNEL_DISPLAY_PREFIX', raising=False)
     assert env.get_display_prefix() == env.DEFAULT_DISPLAY_PREFIX
 
+def test_get_init_modules(monkeypatch):
+    """Test get_init_modules returns the correct list when the environment variable is set. Also checks that
+    whitespaces are properly trimmed"""
+    monkeypatch.setenv(env.INIT_MODULES_ENV_NAME, ' module1, module2 , module3')
+    assert env.get_init_modules() == ['module1', 'module2', 'module3']
+
+def test_get_init_modules_empty(monkeypatch):
+    """Test get_init_modules returns a list with an empty string."""
+    monkeypatch.delenv(env.INIT_MODULES_ENV_NAME, raising=False)
+    assert env.get_init_modules() == ['']
+
 
 async def test_kernel_display_limit_sorting_desc_integration(
         monkeypatch, jp_fetch, jupyter_server_module1, jupyter_server_module2

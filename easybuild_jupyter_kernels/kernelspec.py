@@ -8,15 +8,18 @@ from functools import lru_cache
 
 from jupyter_client.kernelspec import KernelSpec, KernelSpecManager, NoSuchKernel
 
-from .environment import ModuleSorting, get_display_prefix, get_kernel_display_limit, get_module_sorting
+from . import environment as env
 from .loose_version import LooseVersion
 
 
-def module_avail(module_name: str) -> list[str]:
+def module_avail(module_name: str, init_module: str = '') -> list[str]:
     """Return a list of available modules for a given module name using `module avail`."""
+    module_cmd = f'module --terse avail {module_name}/'
+    if init_module:
+        module_cmd = f'module load {init_module} > /dev/null 2>&1 && {module_cmd}'
     try:
         output = subprocess.check_output(
-            f'module --terse avail {module_name}/',
+            module_cmd,
             shell=True, executable='/bin/bash',
             stderr=subprocess.STDOUT
         )
@@ -240,6 +243,9 @@ class KernelData:
     launcher_args_env_vars: dict = field(default_factory=dict, metadata={
         'help': 'Environment variables needed to resolve the launcher arguments (e.g., EBROOTIJULIA for IJulia)',
     })
+    init_module: str = field(default='', metadata={
+        'help': 'Module that was loaded before the kernel module to initialize the environment',
+    })
 
     @property
     def launcher_version_sem(self) -> LooseVersion:
@@ -248,11 +254,18 @@ class KernelData:
 
     @classmethod
     @lru_cache(maxsize=None)
-    def from_env_module(cls, module: str, info_map: ModuleKernelMapping) -> 'KernelData':
+    def from_env_module(cls, module: str, info_map: ModuleKernelMapping, init_module: str = None) -> 'KernelData':
         """Create a KernelData instance from an environment module and a Mapping on how to extract its information."""
+        data_dct = {}
+
         mod_name, mod_ver = module.split('/')
 
-        cmds = [f"module load {module} > /dev/null 2>&1"]
+        module_cmd = f'module load {module} > /dev/null 2>&1'
+        if init_module:
+            data_dct['init_module'] = init_module
+            module_cmd = f'module load {init_module} > /dev/null 2>&1 && {module_cmd}'
+
+        cmds = [module_cmd]
         field_names = []
         for field_info in fields(cls):
             field_name = field_info.name
@@ -280,7 +293,6 @@ class KernelData:
 
 
         output_lines = output.decode('utf-8').splitlines()
-        data_dct = {}
         extra_vars_dct = {}
         try:
             while field_names:
@@ -314,51 +326,54 @@ class EBKernelSpecManager(KernelSpecManager):
             mod_name = info_map.mod_name
 
             kernel_specs = []
-            for module in module_avail(mod_name):
-                found_name, found_ver = module.split('/')
-                if found_name != mod_name:
-                    raise RuntimeError(f"Unexpected module name {found_name} for {mod_name} in module_avail() output")
-                kernel_id = f'{kernel_name}__{found_ver}'
+            for init_module in env.get_init_modules():
+                for module in module_avail(mod_name, init_module=init_module):
+                    found_name, found_ver = module.split('/')
+                    if found_name != mod_name:
+                        raise RuntimeError(
+                            f"Unexpected module name {found_name} for {mod_name} in module_avail() output"
+                        )
+                    kernel_id = f'{kernel_name}__{found_ver}'
 
-                data = KernelData.from_env_module(module, info_map)
+                    data = KernelData.from_env_module(module, info_map, init_module=init_module)
 
-                current_launcher_version = os.getenv(info_map.launcher_version_env_var, None)
-                current_kernel_version = os.getenv(info_map.kernel_version_env_var, None)
+                    current_launcher_version = os.getenv(info_map.launcher_version_env_var, None)
+                    current_kernel_version = os.getenv(info_map.kernel_version_env_var, None)
 
-                min_version, max_version = info_map.launcher_version_filter
-                if min_version and data.launcher_version_sem < min_version:
-                    self.log.debug(
-                        f"Skipping kernel spec for {module} (Python {data.launcher_version}) as it is below the "
-                        f"minimum required version {min_version}"
-                    )
-                    continue
-                if max_version and data.launcher_version_sem >= max_version:
-                    self.log.debug(
-                        f"Skipping kernel spec for {module} (Python {data.launcher_version}) as it is above the "
-                        f"maximum allowed version {max_version}"
-                    )
-                    continue
+                    min_version, max_version = info_map.launcher_version_filter
+                    if min_version and data.launcher_version_sem < min_version:
+                        self.log.debug(
+                            f"Skipping kernel spec for {module} (Python {data.launcher_version}) as it is below the "
+                            f"minimum required version {min_version}"
+                        )
+                        continue
+                    if max_version and data.launcher_version_sem >= max_version:
+                        self.log.debug(
+                            f"Skipping kernel spec for {module} (Python {data.launcher_version}) as it is above the "
+                            f"maximum allowed version {max_version}"
+                        )
+                        continue
 
-                # Avoid conflicts for launcher with other externally loaded modules
-                if current_launcher_version and data.launcher_version != current_launcher_version:
-                    self.log.debug(
-                        f"Skipping kernel spec for {module} (Python {data.launcher_version}) as it does not match "
-                        f"current externally loaded Python version {current_launcher_version}"
-                    )
-                    continue
-                # Avoid conflicts for kernel with other externally loaded modules
-                if current_kernel_version and data.kernel_version != current_kernel_version:
-                    self.log.debug(
-                        f"Skipping kernel spec for {module} (Kernel version {data.kernel_version}) as it does not "
-                        f"match current externally loaded kernel version {current_kernel_version}"
-                    )
-                    continue
-                kernel_specs.append((kernel_id, data, info_map))
+                    # Avoid conflicts for launcher with other externally loaded modules
+                    if current_launcher_version and data.launcher_version != current_launcher_version:
+                        self.log.debug(
+                            f"Skipping kernel spec for {module} (Python {data.launcher_version}) as it does not match "
+                            f"current externally loaded Python version {current_launcher_version}"
+                        )
+                        continue
+                    # Avoid conflicts for kernel with other externally loaded modules
+                    if current_kernel_version and data.kernel_version != current_kernel_version:
+                        self.log.debug(
+                            f"Skipping kernel spec for {module} (Kernel version {data.kernel_version}) as it does not "
+                            f"match current externally loaded kernel version {current_kernel_version}"
+                        )
+                        continue
+                    kernel_specs.append((kernel_id, data, info_map))
 
-            kernel_display_limit = get_kernel_display_limit()
+            kernel_display_limit = env.get_kernel_display_limit()
             if kernel_display_limit:
-                sorting = get_module_sorting()
-                reverse = sorting == ModuleSorting.DESCENDING
+                sorting = env.get_module_sorting()
+                reverse = sorting == env.ModuleSorting.DESCENDING
                 kernel_specs = list(sorted(kernel_specs, key=lambda x: x[1].launcher_version_sem, reverse=reverse))
                 kernel_specs = kernel_specs[:kernel_display_limit]
             for kernel_id, data, info_map in kernel_specs:
@@ -391,7 +406,10 @@ class EBKernelSpecManager(KernelSpecManager):
             # if value is None:
             #     raise RuntimeError(f"Failed to get value for {var} from resolving launcher args for module {module}")
             launcher_args = tuple(arg.replace(f"${var.upper()}", value) for arg in info_map.launcher_args)
-        display_name = info_map.kernel_display_name.format(display_prefix=get_display_prefix())
+        prefix = env.get_display_prefix()
+        if kernel_data.init_module:
+            prefix = ' - '.join(filter(None, (prefix, kernel_data.init_module))) + ' - '
+        display_name = info_map.kernel_display_name.format(display_prefix=prefix)
         language = info_map.kernel_language
 
         existing_ppath = os.getenv('PYTHONPATH', '').split(os.pathsep)
@@ -412,7 +430,7 @@ class EBKernelSpecManager(KernelSpecManager):
         ))
         ppath = os.pathsep.join(filter(None, ppath))
 
-        env = {
+        env_dct = {
             'PATH': kernel_data.path,
             'LD_LIBRARY_PATH': kernel_data.ld_library_path,
             'PYTHONPATH': ppath,
@@ -432,14 +450,14 @@ class EBKernelSpecManager(KernelSpecManager):
             value = getattr(kernel_data, data_field).split(os.pathsep)
             value += [p for p in existing if p not in value]
             value = os.pathsep.join(filter(None, value))
-            env[var] = value
+            env_dct[var] = value
 
         kernel_dct = {
             'argv': (kernel_data.launcher_exe, *launcher_args),
             'display_name': f"{display_name} ({kernel_data.kernel_version})",
             'resource_dir': kernel_data.kernel_path,
             'language': language,
-            'env': env
+            'env': env_dct
         }
 
         self.log.debug(f"Creating KernelSpec for {kernel_id}: {kernel_dct}")
