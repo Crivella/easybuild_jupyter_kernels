@@ -10,8 +10,7 @@ from commons import ModuleInfo
 from jupyter_client import manager
 from jupyter_client.manager import AsyncKernelManager
 
-from easybuild_jupyter_kernels import kernelspec
-from easybuild_jupyter_kernels.kernelspec import CLING_CPP_STDS, EBKernelSpecManager
+from easybuild_jupyter_kernels.kernelspec import CLING_CPP_STDS, EBKernelSpecManager, KernelData
 
 pytest_plugins = ['pytest_jupyter.jupyter_server', 'pytest_jupyter.jupyter_client']
 
@@ -118,7 +117,7 @@ def module_factory(
 def clear_kernel_data_cache(monkeypatch):
     """Clear the lru_cache used to generate KernelData from a module-ModuleKernelMapping combo to avoid re-using a
     module loaded from a previous test"""
-    kernelspec.KernelData.from_env_module.cache_clear()
+    KernelData.from_env_module.cache_clear()
 
 @pytest.fixture
 def submodule_environment1(module_factory, lmod_environment) -> tuple[str, ModuleInfo]:

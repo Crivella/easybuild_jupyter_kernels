@@ -25,6 +25,16 @@ def test_get_kernel_display_limit_valid(monkeypatch):
     monkeypatch.setenv(env.DISPLAY_LIMIT_ENV_NAME, str(value))
     assert env.get_kernel_display_limit() == 5
 
+def test_lazy_loading_default(monkeypatch):
+    """Test get_lazy_loading returns False when the environment variable is not set."""
+    monkeypatch.delenv(env.LAZY_LOADING_ENV_NAME, raising=False)
+    assert env.get_lazy_loading() is False
+
+def test_lazy_loading_true(monkeypatch):
+    """Test get_lazy_loading returns True when the environment variable is set to 'true'."""
+    monkeypatch.setenv(env.LAZY_LOADING_ENV_NAME, 'true')
+    assert env.get_lazy_loading() is True
+
 def test_get_module_sorting_none(monkeypatch):
     """Test get_module_sorting returns the default value when the environment variable is not set."""
     monkeypatch.delenv(env.MODULE_SORTING_ENV_NAME, raising=False)

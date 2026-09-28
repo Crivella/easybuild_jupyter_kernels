@@ -17,6 +17,7 @@ MODULE_SORTING_ENV_NAME = 'EB_JUPYTER_KERNEL_MODULE_SORTING'
 DISPLAT_PREFIX_ENV_NAME = 'EB_JUPYTER_KERNEL_DISPLAY_PREFIX'
 DISPLAY_LIMIT_ENV_NAME = 'EB_JUPYTER_KERNEL_LIMIT'
 INIT_MODULES_ENV_NAME = 'EB_JUPYTER_KERNEL_INIT_MODULES'
+LAZY_LOADING_ENV_NAME = 'EB_JUPYTER_KERNEL_LAZY_LOADING'
 
 
 def get_display_prefix() -> str:
@@ -51,3 +52,7 @@ def get_init_modules() -> list[str]:
     modules loaded."""
     init_modules = os.getenv(INIT_MODULES_ENV_NAME, '')
     return [mod.strip() for mod in init_modules.split(',') if mod.strip()] or list([''])
+
+def get_lazy_loading() -> bool:
+    """Get the lazy loading setting from the environment variable."""
+    return os.getenv(LAZY_LOADING_ENV_NAME, 'False').lower() in ('true', '1', 't')
