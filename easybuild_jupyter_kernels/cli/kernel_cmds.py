@@ -8,7 +8,8 @@ from .main import cli, click
 
 
 @cli.command()
-def list_kernels():
+@click.option('--verbose', is_flag=True, help='Show detailed information about each kernel.')
+def list_kernels(verbose):
     """List available kernels."""
     manager = EBKernelSpecManager()
     kernels = manager.find_kernel_specs()
@@ -19,7 +20,8 @@ def list_kernels():
     for name, path in kernels.items():
         click.echo(f"- {name}: {path}")
         spec = manager.get_kernel_spec(name)
-        click.echo(f"  Display name: {spec.to_dict()}")
+        if verbose:
+            click.echo(f"  Display name: {spec.to_dict()}")
 
 @cli.command()
 @click.argument(

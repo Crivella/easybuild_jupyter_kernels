@@ -20,9 +20,4 @@ def cli():
     show_locals = os.environ.get('RICH_TRACEBACK_SHOW_LOCALS', '1').lower() in ('1', 'true', 'yes')
     install(show_locals=show_locals, suppress=[click, original_click])
 
-@cli.command()
-def test():
-    """Test command to check if the CLI is working."""
-    click.echo('CLI is working!')
-
 __all__ = ['cli']
