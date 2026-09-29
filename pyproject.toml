@@ -45,6 +45,12 @@ pre-commit = [
 release = [
     "flit"
 ]
+cli = [
+    "click",
+]
+
+[project.scripts]
+easybuild-jupyter-kernels = "easybuild_jupyter_kernels.cli:cli"
 
 [tool.isort]
 multi_line_output = 5
