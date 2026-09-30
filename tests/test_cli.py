@@ -1,4 +1,7 @@
 """Test the CLI commands."""
+import os
+import re
+
 import pytest
 from click.testing import CliRunner
 from commons import EESSI_PREFIX, kernelspec_response_common
@@ -59,7 +62,8 @@ def test_list_kernels_in_eessi_2025(monkeypatch):
     assert '/cvmfs/software.eessi.io/versions/2025.06' in result.output, \
         'Expected kernels from jupyter-server modules in EESSI to be listed in the output'
 
-def test_store_kernels(tmp_path, ijulia_module1):
+
+def test_store_kernels(tmp_path, ijulia_module1, jupyter_server_module1):
     """Test the store_kernels command."""
     output_dir = tmp_path / 'kernels'
     runner = CliRunner()
@@ -67,9 +71,58 @@ def test_store_kernels(tmp_path, ijulia_module1):
     assert result.exit_code == 0
     assert output_dir.exists(), 'Expected output directory to be created'
 
-    kernel_name = f"{ijulia_module1.kname}__{ijulia_module1.version}"
-    assert (output_dir / kernel_name / 'kernel.json').exists(), \
-        f"Expected '{ijulia_module1.kname}_{ijulia_module1.version}' kernel.json to be stored in the output directory"
+    julia_kernel_name = f"{ijulia_module1.kname}__{ijulia_module1.version}"
+    assert (output_dir / julia_kernel_name / 'kernel.json').exists(), \
+        f"Expected '{julia_kernel_name}' kernel.json to be stored in the output directory"
+
+    python_kernel_name = f"{jupyter_server_module1.kname}__{jupyter_server_module1.version}"
+    assert (output_dir / python_kernel_name / 'kernel.json').exists(), \
+        f"Expected '{python_kernel_name}' kernel.json to be stored in the output directory"
+
+
+def test_store_kernels_with_path_filters(tmp_path, ijulia_module1, jupyter_server_module1):
+    """Test the store_kernels command with path filters."""
+    output_dir = tmp_path / 'kernels'
+    runner = CliRunner()
+    filter_paths = [r'.*julia.*']
+    result = runner.invoke(store_kernels, [str(output_dir), '--filter-paths'] + filter_paths)
+    assert result.exit_code == 0
+    assert output_dir.exists(), 'Expected output directory to be created'
+
+    julia_kernel_name = f"{ijulia_module1.kname}__{ijulia_module1.version}"
+    assert (output_dir / julia_kernel_name / 'kernel.json').exists(), \
+        f"Expected '{julia_kernel_name}' kernel.json to be stored in the output directory"
+
+    python_kernel_name = f"{jupyter_server_module1.kname}__{jupyter_server_module1.version}"
+    assert not (output_dir / python_kernel_name / 'kernel.json').exists(), \
+        f"Did not expect '{python_kernel_name}' kernel.json to be stored in the output directory due to filter"
+
+
+def test_store_kernels_with_env_path_filters(monkeypatch, tmp_path, ijulia_module1, mock_julia):
+    """Test the store_kernels command with environment path filters."""
+    base_path = os.path.dirname(mock_julia)
+
+    # Add a path that should be filtered out
+    old_path = os.environ.get('PATH', '')
+    fake_path = '/fake' + base_path
+    new_path = f"{fake_path}{os.pathsep}{old_path}"
+    monkeypatch.setenv('PATH', new_path)
+
+    output_dir = tmp_path / 'kernels'
+    runner = CliRunner()
+    filter_env_paths = [rf'^{base_path}']
+    result = runner.invoke(store_kernels, [str(output_dir), '--filter-env-paths'] + filter_env_paths)
+
+    assert result.exit_code == 0
+    assert output_dir.exists(), 'Expected output directory to be created'
+
+    julia_kernel_name = f"{ijulia_module1.kname}__{ijulia_module1.version}"
+    assert (output_dir / julia_kernel_name / 'kernel.json').exists(), \
+        f"Expected '{julia_kernel_name}' kernel.json to be stored in the output directory"
+
+    assert re.search(rf"Filtered \d+ entries from env var 'PATH' for kernel .* {fake_path}", result.output), \
+        'Expected output to indicate that the fake path was filtered out from the PATH environment variable'
+
 
 # Test a server without the EBKernelSpecManager to ensure that the generated kernels work
 @pytest.mark.parametrize('jp_server_config', ['base'], indirect=True)

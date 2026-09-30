@@ -58,20 +58,22 @@ def mock_exec(monkeypatch, tmpdir, name):
     path = [str(bindir)] + os.environ.get('PATH', '').split(os.pathsep)
     monkeypatch.setenv('PATH', os.pathsep.join(path))
 
+    return str(exec_path)
+
 @pytest.fixture
 def mock_julia(monkeypatch, tmpdir):
     """Fixture to mock the Julia executable for testing."""
-    mock_exec(monkeypatch, tmpdir, 'julia')
+    return mock_exec(monkeypatch, tmpdir, 'julia')
 
 @pytest.fixture
 def mock_r(monkeypatch, tmpdir):
     """Fixture to mock the R executable for testing."""
-    mock_exec(monkeypatch, tmpdir, 'R')
+    return mock_exec(monkeypatch, tmpdir, 'R')
 
 @pytest.fixture
 def mock_jupyter_cling_kernel(monkeypatch, tmpdir):
     """Fixture to mock the cling kernel executable for testing."""
-    mock_exec(monkeypatch, tmpdir, 'jupyter-cling-kernel')
+    return mock_exec(monkeypatch, tmpdir, 'jupyter-cling-kernel')
 
 @pytest.fixture
 def module_factory(
