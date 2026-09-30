@@ -81,6 +81,7 @@ disable = [
     "global-statement",
     "broad-exception-caught",
     "too-few-public-methods",
+    "duplicate-code",
 ]
 
 
