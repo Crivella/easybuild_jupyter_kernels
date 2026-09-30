@@ -178,3 +178,5 @@ static
 db.json
 data.json
 ENV
+
+kernels

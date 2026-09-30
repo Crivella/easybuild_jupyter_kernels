@@ -45,6 +45,12 @@ pre-commit = [
 release = [
     "flit"
 ]
+cli = [
+    "click",
+]
+
+[project.scripts]
+easybuild-jupyter-kernels = "easybuild_jupyter_kernels.cli:cli"
 
 [tool.isort]
 multi_line_output = 5
@@ -75,6 +81,7 @@ disable = [
     "global-statement",
     "broad-exception-caught",
     "too-few-public-methods",
+    "duplicate-code",
 ]
 
 
@@ -87,7 +94,7 @@ good-names = [
 [tool.pylint.design]
 max-args = 10
 max-locals = 30
-max-attributes = 15
+max-attributes = 20
 max-positional-arguments = 10
 
 [tool.tox]
