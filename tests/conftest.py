@@ -25,8 +25,10 @@ def has_lmod():
     return bool(lmod_cmd)
 
 @pytest.fixture
-def jp_server_config():
+def jp_server_config(request):
     """Configure the test server to use EBKernelSpecManager as the kernel manager."""
+    if hasattr(request, 'param') and request.param == 'base':
+        return {}
     return {
         'ServerApp': {
             'kernel_spec_manager_class': 'easybuild_jupyter_kernels.kernelspec.EBKernelSpecManager',
