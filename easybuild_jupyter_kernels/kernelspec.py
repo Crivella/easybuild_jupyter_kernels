@@ -1,4 +1,5 @@
 """Implement a custom KernelSpecManager that finds kernels from EasyBuild's `jupyter-server` modules."""
+import json
 import os
 import subprocess
 import sys
@@ -232,6 +233,14 @@ class KernelData:
         'help': 'EBPYTHONPREFIXES environment variable',
         'getcmd': 'echo $EBPYTHONPREFIXES'
     })
+    julia_depot_path: str = field(default='', metadata={
+        'help': 'JULIA_DEPOT_PATH environment variable',
+        'getcmd': 'echo $JULIA_DEPOT_PATH'
+    })
+    julia_load_path: str = field(default='', metadata={
+        'help': 'JULIA_LOAD_PATH environment variable',
+        'getcmd': 'echo $JULIA_LOAD_PATH'
+    })
     eb_julia_depot_path: str = field(default='', metadata={
         'help': 'EBJULIA_DEPOT_PATH environment variable',
         'getcmd': 'echo $EBJULIA_DEPOT_PATH'
@@ -341,23 +350,25 @@ class EBKernelSpecManager(KernelSpecManager):
                     current_kernel_version = os.getenv(info_map.kernel_version_env_var, None)
 
                     min_version, max_version = info_map.launcher_version_filter
+                    l_exe = data.launcher_exe
+                    l_ver = data.launcher_version
                     if min_version and data.launcher_version_sem < min_version:
                         self.log.debug(
-                            f"Skipping kernel spec for {module} (Python {data.launcher_version}) as it is below the "
+                            f"Skipping kernel spec for {module} ({l_exe} {l_ver}) as it is below the "
                             f"minimum required version {min_version}"
                         )
                         continue
                     if max_version and data.launcher_version_sem >= max_version:
                         self.log.debug(
-                            f"Skipping kernel spec for {module} (Python {data.launcher_version}) as it is above the "
+                            f"Skipping kernel spec for {module} ({l_exe} {l_ver}) as it is above the "
                             f"maximum allowed version {max_version}"
                         )
                         continue
 
                     # Avoid conflicts for launcher with other externally loaded modules
-                    if current_launcher_version and data.launcher_version != current_launcher_version:
+                    if current_launcher_version and l_ver != current_launcher_version:
                         self.log.debug(
-                            f"Skipping kernel spec for {module} (Python {data.launcher_version}) as it does not match "
+                            f"Skipping kernel spec for {module} (Python {l_ver}) as it does not match "
                             f"current externally loaded Python version {current_launcher_version}"
                         )
                         continue
@@ -438,6 +449,8 @@ class EBKernelSpecManager(KernelSpecManager):
 
         var_map = {
             'EBPYTHONPREFIXES': 'eb_pythonprefixes',
+            'JULIA_DEPOT_PATH': 'julia_depot_path',
+            'JULIA_LOAD_PATH': 'julia_load_path',
             'EBJULIA_DEPOT_PATH': 'eb_julia_depot_path',
             'EBJULIA_LOAD_PATH': 'eb_julia_load_path',
             'R_LIBS_SITE': 'r_libs_site',
@@ -449,7 +462,7 @@ class EBKernelSpecManager(KernelSpecManager):
             existing = os.getenv(var, '').split(os.pathsep)
             value = getattr(kernel_data, data_field).split(os.pathsep)
             value += [p for p in existing if p not in value]
-            value = os.pathsep.join(filter(None, value))
+            value = os.pathsep.join(value)
             env_dct[var] = value
 
         kernel_dct = {
@@ -460,7 +473,7 @@ class EBKernelSpecManager(KernelSpecManager):
             'env': env_dct
         }
 
-        self.log.debug(f"Creating KernelSpec for {kernel_id}: {kernel_dct}")
+        self.log.debug(f"Creating KernelSpec for {kernel_id}: {json.dumps(kernel_dct, indent=2)}")
 
         return KernelSpec(**kernel_dct)
 
