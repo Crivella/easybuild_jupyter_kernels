@@ -1,6 +1,7 @@
 """Implement a custom KernelSpecManager that finds kernels from EasyBuild's `jupyter-server` modules."""
 import json
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Mapping
@@ -9,11 +10,12 @@ from functools import lru_cache
 
 from jupyter_client.kernelspec import KernelSpec, KernelSpecManager, NoSuchKernel
 
+from . import ebfuncs as ebf
 from . import environment as env
 from .loose_version import LooseVersion
 
 
-def module_avail(module_name: str, init_module: str = '') -> list[str]:
+def module_avail(module_name: str, init_module: str = '', exact: bool = True) -> list[str]:
     """Return a list of available modules for a given module name using `module avail`."""
     module_cmd = f'module --terse avail {module_name}/'
     if init_module:
@@ -29,14 +31,21 @@ def module_avail(module_name: str, init_module: str = '') -> list[str]:
     modules = output.decode('utf-8').splitlines()
     res = [line.strip() for line in modules if line.strip()]
     res = list(filter(lambda module: not module.startswith('/'), res))
-
+    if exact:
+        res = list(filter(lambda module: module.split('/')[0] == module_name, res))
     return res
 
-@dataclass
+@dataclass(kw_only=True)
 class ModuleKernelMapping(Mapping):
     """Map that hold information needed to build a `KernelData` instance from a specific module."""
     mod_name: str = field(metadata={
         'help': 'Name of the module (e.g., jupyter-server)',
+    })
+    extra_modules: tuple[str] = field(default_factory=tuple, metadata={
+        'help': (
+            'Extra modules that need to be loaded before the kernel module (e.g., an applications that uses a python '
+            'kernel but requires extra modules like using ESPResSo in a jupyter notebook).'
+        ),
     })
     kernel_display_name: str = field(metadata={
         'help': 'Display name of the kernel (e.g., Python 3)',
@@ -274,6 +283,18 @@ class KernelData:
             data_dct['init_module'] = init_module
             module_cmd = f'module load {init_module} > /dev/null 2>&1 && {module_cmd}'
 
+        extra_modules = info_map.extra_modules or []
+        main_tc_family = ebf.get_toolchain_family(module)
+        for extra_module in extra_modules:
+            extra_lst = module_avail(extra_module, init_module=init_module)
+            extra_mod = ebf.get_compatible_module(extra_lst, main_tc_family)
+            if not extra_mod:
+                raise RuntimeError(
+                    f'Failed to find a compatible module for {extra_module} with {module} in the same toolchain family.'
+                )
+            module_cmd += f' && module load {extra_mod} > /dev/null 2>&1'
+
+
         cmds = [module_cmd]
         field_names = []
         for field_info in fields(cls):
@@ -288,7 +309,7 @@ class KernelData:
         extra_vars = list(info_map.launcher_args_env_vars)
         # Extra vars needed to resolve the launcher args
         for var in extra_vars:
-            cmds.append(f"echo ${var}")
+            cmds.append(f'echo ${var}')
 
         cmd = ' && '.join(cmds)
         try:
@@ -310,7 +331,7 @@ class KernelData:
                 extra_vars_dct[extra_vars.pop(0).lower()] = output_lines.pop(0)
         except IndexError as exc:
             raise RuntimeError(
-                f"Failed to parse output for module {module}: not enough output lines:\n{output}"
+                f'Failed to parse output for module {module}: not enough output lines:\n{output}'
             ) from exc
 
         data_dct['launcher_args_env_vars'] = extra_vars_dct
@@ -325,26 +346,53 @@ class EBKernelSpecManager(KernelSpecManager):
         self.found_specs: dict[str, KernelData] = {}
         self.found_infos: dict[str, ModuleKernelMapping] = {}
 
-    def find_kernel_specs(self):
+    @classmethod
+    def load_kernel_definitions(cls, kernel_definitions: dict[str, dict]):
+        """Load kernel definitions from a dictionary and update the MODULE_KERNEL_MAP."""
+        for kernel_name, info_map_dct in kernel_definitions.items():
+            for key in info_map_dct:
+                val = info_map_dct[key]
+                if isinstance(val, list):
+                    info_map_dct[key] = tuple(val)
+            try:
+                mapping = ModuleKernelMapping(**info_map_dct)
+            except TypeError as exc:
+                raise ValueError(f'Invalid kernel definition for {kernel_name}: {exc}') from exc
+            MODULE_KERNEL_MAP[kernel_name] = mapping
+
+    def find_kernel_specs(self, filter_kernels: tuple[str] = None) -> dict[str, str]:
         """Use the original method to find kernel specs, and then add any `jupyter-server` module kernels.
         (In Easybuild `ipykernel` is installed in the `jupyter-server` bundle)
         """
         specs = super().find_kernel_specs()
 
+        filter_kernels = env.get_kernel_filters(filter_kernels=filter_kernels)
+
         for kernel_name, info_map in MODULE_KERNEL_MAP.items():
             mod_name = info_map.mod_name
+
+            if filter_kernels and not any(re.search(pattern, kernel_name) for pattern in filter_kernels):
+                self.log.debug(f'Skipping kernel {kernel_name} as it does not match any filter.')
+                continue
 
             kernel_specs = []
             for init_module in env.get_init_modules():
                 for module in module_avail(mod_name, init_module=init_module):
-                    found_name, found_ver = module.split('/')
+                    try:
+                        found_name, found_ver = module.split('/')
+                    except ValueError as exc:
+                        raise RuntimeError(f'Failed to parse module name and version from {module}') from exc
                     if found_name != mod_name:
                         raise RuntimeError(
-                            f"Unexpected module name {found_name} for {mod_name} in module_avail() output"
+                            f'Unexpected module name {found_name} for {mod_name} in module_avail() output'
                         )
                     kernel_id = f'{kernel_name}__{found_ver}'
 
-                    data = KernelData.from_env_module(module, info_map, init_module=init_module)
+                    try:
+                        data = KernelData.from_env_module(module, info_map, init_module=init_module)
+                    except RuntimeError as e:
+                        self.log.warning(f'Failed to load kernel spec for {module}: {e}')
+                        continue
 
                     current_launcher_version = os.getenv(info_map.launcher_version_env_var, None)
                     current_kernel_version = os.getenv(info_map.kernel_version_env_var, None)
@@ -354,29 +402,29 @@ class EBKernelSpecManager(KernelSpecManager):
                     l_ver = data.launcher_version
                     if min_version and data.launcher_version_sem < min_version:
                         self.log.debug(
-                            f"Skipping kernel spec for {module} ({l_exe} {l_ver}) as it is below the "
-                            f"minimum required version {min_version}"
+                            f'Skipping kernel spec for {module} ({l_exe} {l_ver}) as it is below the '
+                            f'minimum required version {min_version}'
                         )
                         continue
                     if max_version and data.launcher_version_sem >= max_version:
                         self.log.debug(
-                            f"Skipping kernel spec for {module} ({l_exe} {l_ver}) as it is above the "
-                            f"maximum allowed version {max_version}"
+                            f'Skipping kernel spec for {module} ({l_exe} {l_ver}) as it is above the '
+                            f'maximum allowed version {max_version}'
                         )
                         continue
 
                     # Avoid conflicts for launcher with other externally loaded modules
                     if current_launcher_version and l_ver != current_launcher_version:
                         self.log.debug(
-                            f"Skipping kernel spec for {module} (Python {l_ver}) as it does not match "
-                            f"current externally loaded Python version {current_launcher_version}"
+                            f'Skipping kernel spec for {module} (Python {l_ver}) as it does not match '
+                            f'current externally loaded Python version {current_launcher_version}'
                         )
                         continue
                     # Avoid conflicts for kernel with other externally loaded modules
                     if current_kernel_version and data.kernel_version != current_kernel_version:
                         self.log.debug(
-                            f"Skipping kernel spec for {module} (Kernel version {data.kernel_version}) as it does not "
-                            f"match current externally loaded kernel version {current_kernel_version}"
+                            f'Skipping kernel spec for {module} (Kernel version {data.kernel_version}) as it does not '
+                            f'match current externally loaded kernel version {current_kernel_version}'
                         )
                         continue
                     kernel_specs.append((kernel_id, data, info_map))
@@ -416,7 +464,7 @@ class EBKernelSpecManager(KernelSpecManager):
         for var, value in extra_vars_dct.items():
             # if value is None:
             #     raise RuntimeError(f"Failed to get value for {var} from resolving launcher args for module {module}")
-            launcher_args = tuple(arg.replace(f"${var.upper()}", value) for arg in info_map.launcher_args)
+            launcher_args = tuple(arg.replace(f'${var.upper()}', value) for arg in info_map.launcher_args)
         prefix = env.get_display_prefix()
         if kernel_data.init_module:
             prefix = ' - '.join(filter(None, (prefix, kernel_data.init_module))) + ' - '
@@ -467,13 +515,13 @@ class EBKernelSpecManager(KernelSpecManager):
 
         kernel_dct = {
             'argv': (kernel_data.launcher_exe, *launcher_args),
-            'display_name': f"{display_name} ({kernel_data.kernel_version})",
+            'display_name': f'{display_name} ({kernel_data.kernel_version})',
             'resource_dir': kernel_data.kernel_path,
             'language': language,
             'env': env_dct
         }
 
-        self.log.debug(f"Creating KernelSpec for {kernel_id}: {json.dumps(kernel_dct, indent=2)}")
+        self.log.debug(f'Creating KernelSpec for {kernel_id}: {json.dumps(kernel_dct, indent=2)}')
 
         return KernelSpec(**kernel_dct)
 
@@ -485,7 +533,7 @@ class EBKernelSpecManager(KernelSpecManager):
             try:
                 spec = self._get_kernel_spec(kernel_name)
             except Exception as e:
-                self.log.error(f"Failed to get kernel spec for {kernel_name}: {e}")
+                self.log.error(f'Failed to get kernel spec for {kernel_name}: {e}')
                 raise NoSuchKernel(kernel_name) from e
 
         return spec

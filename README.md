@@ -39,3 +39,4 @@ List of environment variables that can be used to configure the behavior of the 
 | `EB_JUPYTER_KERNEL_MODULE_SORTING` | Sort kernels in descending/ascending order based on the semantic version of the kernel launcher. **Only for the purpose of limiting the number of kernel displayed per type**. | `asc`/`desc` | `desc` (Kernels with greater launcher version are prioritized) |
 | `EB_JUPYTER_KERNEL_DISPLAY_PREFIX` | Prefix used in the displayed kernel names | str | `"EasyBuild's"` |
 | `EB_JUPYTER_KERNEL_INIT_MODULES` | Comma-separated list of modules used to detect kernels across hierarchical module schemes | str | `""` (find kernel without loading any extra module) |
+| `EB_JUPYTER_KERNELS_FILTER` | Comma-separated list of regex patterns to filter which kernels  should be attempted to be found/generated (OR behavior) | str | `""` (find all kernels) |
