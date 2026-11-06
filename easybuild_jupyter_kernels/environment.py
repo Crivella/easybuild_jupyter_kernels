@@ -17,6 +17,7 @@ MODULE_SORTING_ENV_NAME = 'EB_JUPYTER_KERNEL_MODULE_SORTING'
 DISPLAT_PREFIX_ENV_NAME = 'EB_JUPYTER_KERNEL_DISPLAY_PREFIX'
 DISPLAY_LIMIT_ENV_NAME = 'EB_JUPYTER_KERNEL_LIMIT'
 INIT_MODULES_ENV_NAME = 'EB_JUPYTER_KERNEL_INIT_MODULES'
+FILTER_KERNELS_ENV_NAME = 'EB_JUPYTER_KERNELS_FILTER'
 
 
 def get_display_prefix() -> str:
@@ -29,7 +30,7 @@ def get_kernel_display_limit() -> int:
         return int(os.getenv(DISPLAY_LIMIT_ENV_NAME, str(DEFAULT_DISPLAY_LIMIT)))
     except ValueError as exc:
         raise ValueError(
-            f"Invalid value for {DISPLAY_LIMIT_ENV_NAME}: {os.getenv(DISPLAY_LIMIT_ENV_NAME)}. Must be an integer."
+            f'Invalid value for {DISPLAY_LIMIT_ENV_NAME}: {os.getenv(DISPLAY_LIMIT_ENV_NAME)}. Must be an integer.'
         ) from exc
 
 def get_module_sorting() -> ModuleSorting:
@@ -40,7 +41,7 @@ def get_module_sorting() -> ModuleSorting:
     except ValueError as exc:
         allowed = [_.value for _ in ModuleSorting]
         raise ValueError(
-            f"Invalid value for {MODULE_SORTING_ENV_NAME}: {res}. Allowed values are: {allowed}"
+            f'Invalid value for {MODULE_SORTING_ENV_NAME}: {res}. Allowed values are: {allowed}'
         ) from exc
     return res
 
@@ -51,3 +52,9 @@ def get_init_modules() -> list[str]:
     modules loaded."""
     init_modules = os.getenv(INIT_MODULES_ENV_NAME, '')
     return [mod.strip() for mod in init_modules.split(',') if mod.strip()] or list([''])
+
+def get_kernel_filters(filter_kernels: tuple[str] = None) -> list[str]:
+    """Get the list of kernel name filters from the environment variable or the provided argument."""
+    if filter_kernels is not None:
+        return list(filter_kernels)
+    return os.getenv(FILTER_KERNELS_ENV_NAME, '').split(',')

@@ -19,17 +19,17 @@ def list_kernels(verbose):
         return
     click.echo('Available kernels:')
     for name, path in kernels.items():
-        click.echo(f"- {name}: {path}")
+        click.echo(f'- {name}: {path}')
         spec = manager.get_kernel_spec(name)
         if verbose:
-            click.echo(f"  Display name: {spec.to_dict()}")
+            click.echo(f'  Display name: {spec.to_dict()}')
 
 def filter_path_like_envvar(env_var_value: str, patterns: list[str]) -> tuple[list[str], list[str]]:
     """Filter a PATH-like environment variable value based on provided regex patterns."""
     if not env_var_value:
         return [], []
     if not patterns:
-        return env_var_value, []
+        return env_var_value.split(os.pathsep), []
     patterns = list(patterns) + [r'^$']  # Avoid filtering empty paths
     paths = env_var_value.split(os.pathsep)
     stored_paths = []
@@ -51,30 +51,51 @@ def filter_path_like_envvar(env_var_value: str, patterns: list[str]) -> tuple[li
     '--filter-paths', type=str, multiple=True,
     help=(
         'List of path regexes to filter the kernels to be stored. '
-        'Only kernels whose paths match any of the provided regexes will be stored.'
+        'Only kernels whose paths match any (OR behavior) of the provided regexes will be stored.'
     )
 )
 @click.option(
     '--filter-env-paths', type=str, multiple=True,
     help=(
-        'Filter PATH-like environmenet variable so that all entries match at least one of the provided regexes.'
+        'Filter PATH-like environmenet variable so that all entries match at least one (OR behavior) of '
+        'the provided regexes.'
     )
 )
-def store_kernels(output_dir, filter_paths, filter_env_paths):
+@click.option(
+    '--filter-kernels', type=str, multiple=True,
+    help=(
+        'Only attempt to find and store kernels whose names match any (OR behavior) of the provided regexes. '
+    )
+)
+@click.option(
+    '--kernel-definition-file', type=click.Path(exists=True, dir_okay=False), required=False,
+    help='Path to a JSON file containing extra kernel definitions to be used to look for/generate kernel specs.'
+)
+def store_kernels(
+        output_dir, filter_paths, filter_env_paths, filter_kernels,
+        kernel_definition_file,
+    ):
     """Store kernels in the specified directory."""
-    click.echo(f"Storing kernels in {output_dir}...")
-    click.echo(f"Filter: {filter_paths}")
-    click.echo(f"Filter env paths: {filter_env_paths}")
+    click.echo(f'Storing kernels in {output_dir}...')
+    click.echo(f'Filter: {filter_paths}')
+    click.echo(f'Filter env paths: {filter_env_paths}')
+    click.echo(f'Filter kernels: {filter_kernels}')
+
+    if kernel_definition_file:
+        click.echo(f'Loading kernel definitions from {kernel_definition_file}...')
+        with open(kernel_definition_file, 'r', encoding='utf-8') as f:
+            kernel_definitions = json.load(f)
+        EBKernelSpecManager.load_kernel_definitions(kernel_definitions)
 
     manager = EBKernelSpecManager()
-    kernels = manager.find_kernel_specs()
+    kernels = manager.find_kernel_specs(filter_kernels=filter_kernels)
     if not kernels:
         click.echo('No kernels found.')
         return
 
     for name, path in kernels.items():
         if filter_paths and not any(re.search(pattern, path) for pattern in filter_paths):
-            click.echo(f"Skipping kernel {name} as its path {path} does not match any filter.")
+            click.echo(f'Skipping kernel {name} as its path {path} does not match any filter.')
             continue
         spec = manager.get_kernel_spec(name)
 
@@ -108,6 +129,6 @@ def store_kernels(output_dir, filter_paths, filter_env_paths):
                 else:
                     shutil.copy2(s, d)
 
-    click.echo(f"Stored {len(kernels)} kernels in {output_dir}.")
+    click.echo(f'Stored {len(kernels)} kernels in {output_dir}.')
 
 __all__ = ['list_kernels', 'store_kernels']

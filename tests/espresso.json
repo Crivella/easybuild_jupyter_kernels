@@ -1,0 +1,23 @@
+{
+    "ESPResSo": {
+        "mod_name": "ESPResSo",
+        "extra_modules": [
+            "tqdm",
+            "ASE",
+            "RDKit",
+            "jupyter-server"
+        ],
+        "kernel_display_name": "{display_prefix} ESPResSo",
+        "kernel_language": "python",
+        "kernel_path": "$EBROOTJUPYTERMINSERVER/share/jupyter/kernels/python3",
+        "launcher_exec": "python",
+        "launcher_args": [
+            "-m",
+            "ipykernel_launcher",
+            "-f",
+            "{connection_file}"
+        ],
+        "launcher_version_env_var": "EBVERSIONPYTHON",
+        "kernel_version_env_var": "EBVERSIONESPRESSO"
+    }
+}
